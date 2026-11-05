@@ -39,7 +39,10 @@ async function directory(db,tenant,plugin){
 async function candidates(selection,db,tenant,plugin){
   insist(isObject(selection),'请选择业务和套餐。');
   const plans=await directory(db,tenant,plugin);
-  const rows=await templates(db,tenant), res=match(selection,rows,plans);
+  const rows=await templates(db,tenant);
+  const chosen=plans.find(t=>t.id===selection.tariff_id);
+  const matching=chosen?.template_id ? rows.map(t=>t.id===chosen.template_id?{...t,tariff_id:chosen.id}:t) : rows;
+  const res=match(selection,matching,plans);
   for(const c of res.candidates){
     c.extra_fields=[...new Set(Object.values(rows.find(t=>t.id===c.id).mapping).filter(k=>k.startsWith('extra_')))];
     const profile=plans.find(t=>t.id===selection.tariff_id)?.carrier_profile;
@@ -120,11 +123,38 @@ async function generate(data,db,bucket,tenant,actor,plugin) {
     SELECT ?,?,?,?,?,?,? WHERE (SELECT json_group_array(id) FROM
       (SELECT id FROM qa_templates WHERE tenant=? AND tariff_id=? AND active=1 ORDER BY id))=?
     ON CONFLICT(tenant,actor,request_id) DO NOTHING`)
-    .bind(id,tenant,actor,request_id,digest,JSON.stringify(snapshot),key,tenant,tariff.id,JSON.stringify(activeIds)).run();
+    .bind(id,tenant,actor,request_id,digest,JSON.stringify(snapshot),key,tenant,t.tariff_id,JSON.stringify(activeIds)).run();
   if(resultChanges(inserted))return json(snapshot);
   await bucket.delete(key);
   const row=await existing();if(row)return replay(row);
   throw new FormError('候选模板已变化，请重新匹配。',409);
+}
+
+async function carrierRates(db,tenant,info,templateId){
+  const {profile,name,rates}=info;
+  return Promise.all(rates.map(async rate=>{
+    const id='carrier-'+(await signature(JSON.stringify([profile,rate.bandwidth,rate.amount,rate.cycle]))).slice(0,24);
+    const tariff={id,name,bandwidth:rate.bandwidth,amount:rate.amount,cycle:rate.cycle,business_id:version.business_id,
+      business_version_id:version.id,business_attribute:'new',voice_required:false,carrier_profile:profile,carrier_rate:rate.key,template_id:templateId};
+    return db.prepare('INSERT OR REPLACE INTO demo_tariffs(tenant,id,data) VALUES(?,?,?)').bind(tenant,id,JSON.stringify(tariff));
+  }));
+}
+
+async function consolidateCarrier(db,bucket,tenant,plugin){
+  const legacy=(await db.prepare("SELECT data FROM demo_tariffs WHERE tenant=? AND json_extract(data,'$.template_id') IS NULL").bind(tenant).all()).results;
+  for(const profile of new Set(legacy.map(r=>JSON.parse(r.data).carrier_profile))){
+    const plans=legacy.map(r=>JSON.parse(r.data)).filter(t=>t.carrier_profile===profile);
+    const rows=(await Promise.all(plans.map(t=>db.prepare('SELECT * FROM qa_templates WHERE tenant=? AND id=?').bind(tenant,t.id).first()))).filter(Boolean);
+    if(!rows.length)continue;
+    const keep=rows.find(t=>t.active)||rows[0];
+    const info=plugin.analyzeCarrier(await bytesFor(bucket,keep.object_key,keep.tariff_id));
+    await db.batch([
+      ...await carrierRates(db,tenant,info,keep.id),
+      ...rows.filter(t=>t.id!==keep.id).map(t=>db.prepare('DELETE FROM qa_templates WHERE tenant=? AND id=?').bind(tenant,t.id))
+    ]);
+    for(const t of rows)if(t.id!==keep.id)await bucket.delete(t.object_key);
+    plugin.markMigrated();
+  }
 }
 
 async function importCarrier(data,db,bucket,tenant,plugin,save) {
@@ -134,18 +164,16 @@ async function importCarrier(data,db,bucket,tenant,plugin,save) {
   catch(error) { throw new FormError(error.message); }
   const {profile,name,revision,rates,tags,file}=info;
   if(!save)return json({name,rates,tags});
-  const rate=rates.find(r=>r.key===data.rate);
-  insist(rate,'请选择管理员已核对的基础资费。');
-  const id='carrier-'+(await signature(JSON.stringify([profile,rate.bandwidth,rate.amount,rate.cycle]))).slice(0,24);
-  const tariff={id,name,bandwidth:rate.bandwidth,amount:rate.amount,cycle:rate.cycle,business_id:version.business_id,
-    business_version_id:version.id,business_attribute:'new',voice_required:false,carrier_profile:profile,carrier_rate:rate.key};
+  const id='carrier-'+profile;
+  const existing=(await directory(db,tenant,plugin)).find(t=>t.carrier_profile===profile && t.template_id);
+  if(existing)return json({id:existing.template_id,duplicate:true});
   const already=await db.prepare('SELECT id FROM qa_templates WHERE tenant=? AND id=?').bind(tenant,id).first();
   if(already)return json({id,duplicate:true});
   const key='templates/'+tenant+'/'+id;
   await bucket.put(key,file);
   try {
     await db.batch([
-      db.prepare('INSERT INTO demo_tariffs(tenant,id,data) VALUES(?,?,?)').bind(tenant,id,JSON.stringify(tariff)),
+      ...await carrierRates(db,tenant,info,id),
       db.prepare('INSERT INTO qa_templates(tenant,id,tariff_id,name,revision,active,mapping,object_key) VALUES(?,?,?,?,?,0,?,?)')
         .bind(tenant,id,id,name+' 申请登记表',revision,JSON.stringify(Object.fromEntries(tags.map(tag=>[tag,tag]))),key)
     ]);
@@ -179,6 +207,7 @@ export async function handleForms(req,env) {
       .bind(await signature(auth.slice(7)),tenant,Date.now()).first();
     insist(entry,'验收身份已过期，请重新进入。',401);
     const actor=entry.actor;
+    if(plugin)await consolidateCarrier(db,bucket,tenant,plugin);
     if(path==='/forms/workspace' && method==='GET')return json({actor:accounts[actor],tariffs:await directory(db,tenant,plugin),labels,smart_import:Boolean(plugin)});
     if(path==='/forms/match' && method==='POST')return json(await candidates((await body(req)).selection,db,tenant,plugin));
     if(path==='/forms/generate' && method==='POST')return await generate(await body(req),db,bucket,tenant,actor,plugin);
@@ -212,8 +241,7 @@ export async function handleForms(req,env) {
         insist(t.object_key,'内置样表不能删除。',403);
         const [deleted]=await db.batch([
           db.prepare('DELETE FROM qa_templates WHERE tenant=? AND id=? AND object_key=?').bind(tenant,id,t.object_key),
-          db.prepare('DELETE FROM demo_tariffs WHERE tenant=? AND id=? AND NOT EXISTS (SELECT 1 FROM qa_templates WHERE tenant=? AND tariff_id=?)')
-            .bind(tenant,t.tariff_id,tenant,t.tariff_id)
+          db.prepare("DELETE FROM demo_tariffs WHERE tenant=? AND json_extract(data,'$.template_id')=?").bind(tenant,id)
         ]);
         insist(resultChanges(deleted),'模板状态已变化，请刷新后再试。',409);
         await bucket.delete(t.object_key);

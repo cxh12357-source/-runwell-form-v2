@@ -78,7 +78,8 @@ export async function localFetch(path, options = {}) {
           put: (key, bytes) => files.set(key, bytes),
           delete: key => files.delete(key)
         };
-        const env = { DB: database(sql), BUCKET: bucket, DEMO_IMPORT: carrier };
+        let migrated=false;
+        const env = { DB: database(sql), BUCKET: bucket, DEMO_IMPORT: {...carrier,markMigrated:()=>{migrated=true;}} };
         const headers = new Headers(options.headers);
         // The marker and demo session live entirely inside the browser; never forward them.
         headers.set('oai-authenticated-user-id', clientId);
@@ -94,7 +95,7 @@ export async function localFetch(path, options = {}) {
           }
           headers.set('Authorization', 'Bearer ' + session.token);
           const result = await handleForms(new Request(new URL(path, location.origin), { ...options, headers }), env);
-          if (result.ok && (session !== saved?.session || (options.method && options.method !== 'GET'))) {
+          if (result.ok && (migrated || session !== saved?.session || (options.method && options.method !== 'GET'))) {
             const data = sql.export();
             if (data.length + [...files.values()].reduce((sum, file) => sum + file.byteLength, 0) > limit) {
               return Response.json({ error: { message: '演示存储已满。请先下载需要保留的文件，再清理本站浏览器数据。' } }, { status: 507 });
