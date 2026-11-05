@@ -19,7 +19,7 @@ export function templatesView({ rows, workspace, hosted }) {
     rows.map(t => {
       const tariff=workspace.tariffs.find(a=>a.template_id===t.id) || workspace.tariffs.find(a => a.id === t.tariff_id);
       const packageName=tariff?.carrier_profile?.startsWith('fttr-b-shanghai-2026-')
-        ? '100M 智云上海专线基础版（不带语音、不打折）' : tariff?.name;
+        ? '100M 智云上海专线基础版（不带语音、'+(tariff.carrier_profile.endsWith('-discount')?'打折':'不打折')+'）' : tariff?.name;
       return '<tr data-tariff="' + esc(tariff?.id) + '"><td>' + esc(packageName) +
       '</td><td>' + esc(t.name) + '</td><td>' + esc(t.revision) + '</td>' +
       (workspace.smart_import ? '<td>'+(t.imported_at ? esc(new Date(t.imported_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})) : '未记录')+'</td>' : '') +
@@ -141,13 +141,15 @@ function bindSmartImport(root) {
       preview.innerHTML='<p>识别到：<strong>'+esc(result.name)+'</strong> · 商务专线／不带语音／新装</p>'+
         '<p>已定位 '+Number(result.tags.length)+' 个占位符，所有方框默认留空。</p><ul>'+
         result.rates.map(r=>'<li>'+esc(r.bandwidth+' · '+r.amount+' 元/'+r.cycle+'/线')+'</li>').join('')+
-        '</ul><form id="smart-confirm"><button class="button">导入模板</button></form>';
+        '</ul><form id="smart-confirm">'+(result.variantRequired?
+          '<label>确认模板类型<select name="variant" required><option value="">请选择打折或不打折</option><option value="discount">100M 打折、不带语音</option><option value="standard">100M 不打折、不带语音</option></select></label>':'')+
+        '<button class="button">导入模板</button></form>';
       const confirm=preview.querySelector('form');
       confirm.onsubmit=async event=>{
         event.preventDefault();
         const button=confirm.querySelector('button');button.disabled=true;picker.disabled=true;
         try {
-          const saved=await request('/templates/import',{method:'POST',data:{file}});
+          const saved=await request('/templates/import',{method:'POST',data:{file,variant:confirm.elements.variant?.value}});
           if(root.isConnected){
             const notice=saved.duplicate?'该版式模板已导入，未重复新增。':'已录入一份模板。启用后，员工可在生成表单时选择资费。';
             sessionStorage.setItem('runwell-smart-import-notice',notice);

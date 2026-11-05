@@ -5,6 +5,7 @@ const R = 'http://schemas.openxmlformats.org/package/2006/relationships';
 const P = 'http://schemas.openxmlformats.org/package/2006/content-types';
 const profile = 'fttr-b-shanghai-2026-a';
 const octoberProfile = 'fttr-b-shanghai-2026-10-21';
+const discountProfile = octoberProfile+'-discount';
 const name = '智云上海专线基础版（FTTR-B）';
 const body = 'word/document.xml';
 const removable = /^(customXml\/|docProps\/)/;
@@ -127,7 +128,7 @@ const octoberGroups = groups.map(group=>{
   return group;
 });
 export function controls(profileId) {
-  return {inputs,groups:(profileId===octoberProfile?octoberGroups:groups).map(([key,label,required,items])=>
+  return {inputs,groups:([octoberProfile,discountProfile].includes(profileId)?octoberGroups:groups).map(([key,label,required,items])=>
     ({key:'choice_'+key,label,required,options:items.map(x=>x[2])}))};
 }
 
@@ -142,7 +143,7 @@ function profileDocument(files) {
   return {doc,p,october};
 }
 
-export function analyzeCarrier(bytes) {
+export function analyzeCarrier(bytes,variant) {
   const files = unpack(bytes), {doc,p,october} = profileDocument(files);
   const rateRows = [39,40].map(i=>Array.from(compact(p[i]).matchAll(/[□■☐☑]拨号(\d+M\/\d+M)\((\d+(?:\.\d{1,2})?)元\/(月|年|2年)\/线\)/g)));
   const rates = rateRows.flat().map((m,index)=>({
@@ -187,12 +188,15 @@ export function analyzeCarrier(bytes) {
   for (const t of wt(doc)) t.textContent = t.textContent.replace(glyphs,'□');
   files[body] = serialize(doc);
   const tags = [...new Set(wt(doc).flatMap(t=>[...t.textContent.matchAll(/\{\{([a-z_]+)\}\}/g)].map(m=>m[1])))];
-  return {profile:october?octoberProfile:profile,name:october?name+'（10 月 21 日版）':name,revision:october?'2026-10-21':'2026/A',rates,tags,file:zipSync(files,{level:6})};
+  const discounted=october && variant==='discount';
+  return {profile:discounted?discountProfile:october?octoberProfile:profile,variantRequired:october,
+    name:october?name+(discounted?'（打折、不带语音 · 10 月 21 日版）':'（不打折、不带语音 · 10 月 21 日版）'):name,
+    revision:october?'2026-10-21':'2026/A',rates,tags,file:zipSync(files,{level:6})};
 }
 
 export function renderCarrier(bytes, customer, rate) {
   const files = unpack(bytes), {doc,p,october} = profileDocument(files);
-  requireThat(rate.carrier_profile===(october?octoberProfile:profile),'套餐与 Word 版式不一致。');
+  requireThat((october?[octoberProfile,discountProfile]:[profile]).includes(rate.carrier_profile),'套餐与 Word 版式不一致。');
   const marks = new Map();
   const select = (i,j) => marks.set(i,[...(marks.get(i)||[]),j]);
   const value = key => typeof customer[key] === 'string' ? customer[key].trim() : '';

@@ -161,10 +161,11 @@ async function consolidateCarrier(db,bucket,tenant,plugin){
 async function importCarrier(data,db,bucket,tenant,plugin,save) {
   insist(typeof data.file==='string' && data.file.length>0 && data.file.length<=699052,'请选择 512 KiB 以内的 DOCX。');
   let info;
-  try { info=plugin.analyzeCarrier(Uint8Array.from(atob(data.file),c=>c.charCodeAt(0))); }
+  try { info=plugin.analyzeCarrier(Uint8Array.from(atob(data.file),c=>c.charCodeAt(0)),data.variant); }
   catch(error) { throw new FormError(error.message); }
   const {profile,name,revision,rates,tags,file}=info;
-  if(!save)return json({name,rates,tags});
+  if(!save)return json({name:info.variantRequired?'100M 智云上海专线基础版（10 月 21 日版）':name,rates,tags,variantRequired:info.variantRequired});
+  insist(!info.variantRequired || ['discount','standard'].includes(data.variant),'请确认此模板属于打折还是不打折。');
   const id='carrier-'+profile;
   const existing=(await directory(db,tenant,plugin)).find(t=>t.carrier_profile===profile && t.template_id);
   if(existing)return json({id:existing.template_id,duplicate:true});
