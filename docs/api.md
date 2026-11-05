@@ -47,7 +47,7 @@
 
 一般接口使用响应中的 Bearer 口令。两个 `GET .../{id}/file` 下载也可使用同一响应设置的 HttpOnly、Secure、SameSite=Strict Cookie。服务端复核文件归属或模板管理权限，返回可下载的 DOCX。测试账号及数据仅用于验收。
 
-免登录 Demo 在浏览器内运行。`GET /forms/templates` 的 `custom` 标识自定义模板；管理员可对已停用的自定义模板调用 `DELETE /forms/templates/{id}`，内置样表和启用中的模板禁止删除。删除不影响历史文件。
+免登录 Demo 在浏览器内运行。`GET /forms/templates` 的 `custom` 标识自定义模板；管理员可对启用或停用的自定义模板调用 `DELETE /forms/templates/{id}`，内置样表禁止删除。删除不影响历史文件。
 
 ## 客户资料收集与虚构工商验收
 

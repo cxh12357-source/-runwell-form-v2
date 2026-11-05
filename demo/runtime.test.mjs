@@ -55,7 +55,6 @@ test('免登录运行：拒绝缺项、生成 Word、刷新后下载、上传及
   assert.ok((await result(call('/templates'))).find(t => t.id === added.id).custom);
   assert.equal((await call('/templates/' + sampleId, 'DELETE')).status, 403);
   await result(call('/templates/' + added.id, 'PATCH', { active: true }));
-  assert.equal((await call('/templates/' + added.id, 'DELETE')).status, 409);
   const ambiguous = await match();
   assert.equal(ambiguous.status, 'ambiguous');
   assert.equal((await call('/generate', 'POST', { ...input, request_id: crypto.randomUUID() })).status, 409);
@@ -64,8 +63,10 @@ test('免登录运行：拒绝缺项、生成 Word、刷新后下载、上传及
   }));
   await result(call('/templates/' + added.id, 'PATCH', { active: false }));
   assert.equal((await match()).status, 'unique');
+  await result(call('/templates/' + added.id, 'PATCH', { active: true }));
   await result(call('/templates/' + added.id, 'DELETE'));
   ({ localFetch } = await import(source + '#deleted'));
+  assert.equal((await match()).status, 'unique');
   assert.equal((await result(call('/templates'))).some(t => t.id === added.id), false);
   assert.equal((await call('/templates/' + added.id + '/file')).status, 404);
   assert.equal((await call('/records/' + customRecord.id + '/file')).status, 200);

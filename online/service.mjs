@@ -197,12 +197,11 @@ export async function handleForms(req,env) {
       const item=/^\/forms\/templates\/([\w-]+)(\/file)?$/.exec(path);
       if(plugin && item && !item[2] && method==='DELETE'){
         const id=item[1];
-        const t=await db.prepare('SELECT object_key,tariff_id,active FROM qa_templates WHERE tenant=? AND id=?').bind(tenant,id).first();
+        const t=await db.prepare('SELECT object_key,tariff_id FROM qa_templates WHERE tenant=? AND id=?').bind(tenant,id).first();
         insist(t,'找不到模板。',404);
         insist(t.object_key,'内置样表不能删除。',403);
-        insist(!t.active,'请先停用模板，再删除。',409);
         const [deleted]=await db.batch([
-          db.prepare('DELETE FROM qa_templates WHERE tenant=? AND id=? AND active=0 AND object_key=?').bind(tenant,id,t.object_key),
+          db.prepare('DELETE FROM qa_templates WHERE tenant=? AND id=? AND object_key=?').bind(tenant,id,t.object_key),
           db.prepare('DELETE FROM demo_tariffs WHERE tenant=? AND id=? AND NOT EXISTS (SELECT 1 FROM qa_templates WHERE tenant=? AND tariff_id=?)')
             .bind(tenant,t.tariff_id,tenant,t.tariff_id)
         ]);

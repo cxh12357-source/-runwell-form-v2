@@ -19,7 +19,7 @@ export function templatesView({ rows, workspace, hosted }) {
       '</td><td>' + esc(t.name) + '</td><td>' + esc(t.revision) + '</td><td data-template-state aria-live="polite">' + (t.active ? '已启用' : '已停用') + '</td><td>' +
       '<button type="button" data-active="' + String(!t.active) + '" data-id="' + esc(t.id) + '">' + (t.active ? '停用' : '启用') +
       '</button> ' + downloadControl('/templates/' + t.id + '/file', '下载模板', hosted) +
-      (t.custom ? ' <span data-delete-tools'+(t.active?' hidden':'')+'><button type="button" data-delete-open>删除</button></span><div class="template-delete-confirm" hidden>' +
+      (t.custom ? ' <button type="button" data-delete-open>删除</button><div class="template-delete-confirm" hidden>' +
       '<p>删除「'+esc(t.name)+'」版本 '+esc(t.revision)+'？已生成的 Word 仍可从历史记录下载。</p>' +
       '<button type="button" data-delete-cancel>取消</button> <button type="button" data-delete-confirm="'+esc(t.id)+'">确认删除</button></div>' : '') +
       '<details><summary>查看映射</summary><pre>' + esc(JSON.stringify(t.mapping, null, 2)) + '</pre></details><div data-template-error aria-live="polite"></div></td></tr>'; }).join('') + '</tbody></table></div>';
@@ -65,14 +65,13 @@ export function bindTemplates(root, state) {
     const row = action.closest('tr');
     const toggle = row.querySelector('[data-active]');
     if (toggle.disabled) return;
-    const tools = row.querySelector('[data-delete-tools]');
     const opener = row.querySelector('[data-delete-open]');
     const panel = row.querySelector('.template-delete-confirm');
     const cancel = row.querySelector('[data-delete-cancel]');
     const errorMessage = row.querySelector('[data-template-error]');
     const focusHere = element => element.focus({ preventScroll: true });
-    if (action === opener) { panel.hidden = false; opener.hidden = true; focusHere(cancel); return; }
-    if (action === cancel) { panel.hidden = true; opener.hidden = false; focusHere(opener); return; }
+    if (action === opener) { panel.hidden = false; focusHere(cancel); return; }
+    if (action === cancel) { panel.hidden = true; focusHere(opener); return; }
     errorMessage.textContent = '';
     const hadFocus = document.activeElement === action;
     toggle.disabled = action.disabled = true;
@@ -82,7 +81,7 @@ export function bindTemplates(root, state) {
         row.querySelector('[data-template-state]').textContent = active ? '已启用' : '已停用';
         toggle.textContent = active ? '停用' : '启用';
         toggle.dataset.active = String(!active);
-        if (tools) { tools.hidden = active; panel.hidden = true; opener.hidden = false; }
+        if (panel) panel.hidden = true;
       } else {
         await request('/templates/' + action.dataset.deleteConfirm, { method: 'DELETE' });
         if (!row.isConnected) return;
