@@ -1,0 +1,12 @@
+{
+  "name": "runwell-form-v2",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "node backend/server.mjs",
+    "start": "node backend/server.mjs",
+    "test": "node --test tests/*.test.mjs"
+  }
+}

@@ -205,6 +205,19 @@ cython_debug/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
+# Runwell V2 local runtime and sensitive files
+node_modules/
+.env.*
+!.env.example
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+storage/
+uploads/
+generated_files/
+work/
+
 # Ruff stuff:
 .ruff_cache/
 
