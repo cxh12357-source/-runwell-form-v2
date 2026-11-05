@@ -94,9 +94,10 @@ async function assemble(stage) {
   await copyFile(join(xmldomRoot, 'LICENSE'), inTarget('vendor/qa-xmldom/LICENSE'));
   await put('vendor/qa-xmldom/package.json', '{"type":"commonjs"}\n');
   await copyFile(join(online, 'schema.ts'), inTarget('db/schema.ts'));
-  const testName = update ? 'word-import-hosted.test.mjs' : 'hosted.test.mjs';
-  await copyFile(join(online, 'hosted.test.mjs'), inTarget('tests', testName));
-  await copyFile(join(online, 'carrier-fixture.mjs'), inTarget('tests/carrier-fixture.mjs'));
+  if (!update) await copyFile(join(online, 'hosted.test.mjs'), inTarget('tests/hosted.test.mjs'));
+  for (const name of ['word-import-hosted.test.mjs', 'carrier-fixture.mjs']) {
+    await copyFile(join(online, name), inTarget('tests', name));
+  }
   await put('worker/index.ts', nextWorker);
   if (!update) {
     await put('.openai/hosting.json', JSON.stringify({ ...manifest, d1: 'DB', r2: 'BUCKET' }, null, 2) + '\n');
