@@ -103,3 +103,35 @@ test('直接下载使用私有会话 Cookie 并复核身份和模板权限',asyn
  assert.equal((await get('templates/demo-a-sample/file','other')).status,401);
  assert.equal((await get('records','qa-user')).status,401);
 });
+
+test('客户回复补齐后生成有工商栏的 Word；带语音缺实名字段时拒绝',async()=>{
+ const visitor='intake-acceptance',actor=await account('a',visitor);
+ const {parseReply,lookupFixture,staffEstimates,matchReplyTariff}=await import('../public/modules/forms/intake-rules.js');
+ const labeled='企业全称：虚构测试企业，安装地址：虚构甲路，账单地址：虚构乙路，套餐：测试套餐 C，经办人：测试甲，手机：10000000000，身份证号：000000000000000000，邮箱：qa@example.invalid，付款方式：托收，银行账号：0000000654321';
+ const values=Object.fromEntries(Object.entries(parseReply(labeled)).map(([key,items])=>[key,items[0]]));
+ assert.equal(matchReplyTariff(values.tariff,tariffs),'demo-c');
+ const company=lookupFixture(values.company_name);
+ const profile={...company,...staffEstimates(company.insured)};
+ const request=(path,method,data)=>api(path,{visitor,actor,method,data});
+ async function submission(t,client) {
+   const selection={...t,tariff_id:t.id};
+   const matched=await value(request('/forms/match','POST',{selection}));
+   return {selection,customer:client,template_id:matched.candidates[0].id,match_token:matched.match_token,request_id:crypto.randomUUID()};
+ }
+ const c=await submission(tariffs.find(t=>t.id==='demo-c'),{...values,...profile});
+ assert.equal((await request('/forms/generate','POST',c)).status,422);
+ c.customer.bank_name=parseReply('开户行：虚构测试银行').bank_name[0];
+ const readWord=async row=>{
+   const r=await request('/forms/records/'+row.id+'/file','GET');assert.equal(r.status,200);
+   return strFromU8(unzipSync(new Uint8Array(await r.arrayBuffer()))['word/document.xml']);
+ };
+ const xml=await readWord(await value(request('/forms/generate','POST',c)));
+ for(const token of [company.extra_credit_code,company.extra_industry,'10人以下','16-40台','虚构测试银行','☑ 托收'])assert.ok(xml.includes(token),token);
+ const v=await submission(tariffs.find(t=>t.voice_required),{...values,payment_method:'cash'});
+ assert.equal((await request('/forms/generate','POST',v)).status,422);
+ const more=parseReply('法定代表人：虚构法人，法定代表人身份证号码：000000000000000001，使用人（实名制）：虚构使用人，使用人（实名制）身份证号码：000000000000000002');
+ for(const [key,[val]] of Object.entries(more))v.customer[key]=val;
+ const voiceXML=await readWord(await value(request('/forms/generate','POST',v)));
+ for(const val of Object.values(more))assert.ok(voiceXML.includes(val[0]));
+ assert.ok(voiceXML.includes('☑ 现金'));assert.ok(!voiceXML.includes(values.bank_account));
+});
