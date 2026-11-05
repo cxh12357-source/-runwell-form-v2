@@ -52,11 +52,33 @@ test('免登录运行：拒绝缺项、生成 Word、刷新后下载、上传及
   const added = await result(call('/templates', 'POST', { name: name + '本机样表', revision: 'test-2', tariff_id: id,
     mapping: templates.find(t => t.id === sampleId).mapping, file: Buffer.from(await templateFile.arrayBuffer()).toString('base64') }), 201);
   assert.equal(added.active, false);
+  const imported = (await result(call('/templates'))).find(t => t.id === added.id);
+  assert.ok(imported.custom);
+  assert.equal(new Date(imported.imported_at).toISOString(), imported.imported_at);
+  assert.equal((await call('/templates/' + sampleId, 'DELETE')).status, 403);
   await result(call('/templates/' + added.id, 'PATCH', { active: true }));
-  assert.equal((await match()).status, 'ambiguous');
+  assert.equal((await result(call('/templates'))).find(t => t.id === added.id).imported_at, imported.imported_at);
+  const ambiguous = await match();
+  assert.equal(ambiguous.status, 'ambiguous');
   assert.equal((await call('/generate', 'POST', { ...input, request_id: crypto.randomUUID() })).status, 409);
+  const customRecord = await result(call('/generate', 'POST', {
+    ...input, template_id: added.id, match_token: ambiguous.match_token, request_id: crypto.randomUUID()
+  }));
   await result(call('/templates/' + added.id, 'PATCH', { active: false }));
   assert.equal((await match()).status, 'unique');
+  await result(call('/templates/' + added.id, 'PATCH', { active: true }));
+  await result(call('/templates/' + added.id, 'DELETE'));
+  ({ localFetch } = await import(source + '#deleted'));
+  assert.equal((await match()).status, 'unique');
+  assert.equal((await result(call('/templates'))).some(t => t.id === added.id), false);
+  assert.equal((await call('/templates/' + added.id + '/file')).status, 404);
+  assert.equal((await call('/records/' + customRecord.id + '/file')).status, 200);
+  assert.ok((await result(call('/workspace'))).tariffs.some(t => t.id === id));
+  await result(call('/templates/samples', 'DELETE'));
+  ({ localFetch } = await import(source + '#samples-cleared'));
+  assert.deepEqual(await result(call('/templates')), []);
+  assert.deepEqual((await result(call('/workspace'))).tariffs, []);
+  assert.equal((await call('/records/' + customRecord.id + '/file')).status, 200);
   globalThis.indexedDB = new IDBFactory();
   assert.deepEqual(await result(call('/records')), []);
   assert.equal((await result(call('/templates'))).some(t => t.id === added.id), false);

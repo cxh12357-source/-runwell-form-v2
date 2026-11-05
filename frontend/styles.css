@@ -4,3 +4,13 @@
 .intake-columns{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,270px),1fr));gap:18px}
 #intake button:not(.button),#company-fields button{border:1px solid #bacbdd;border-radius:6px;background:#f5f8fc;color:#214f86;cursor:pointer;padding:7px 13px;margin-top:6px}
 #voice-fields[hidden],#intake[hidden],#company-fields[hidden],#followup-block[hidden]{display:none}
+.smart-import { margin-bottom: 1.5rem; }
+#smart-drop { border: 2px dashed #6488ac; border-radius: 10px; padding: 1rem; margin-block: .75rem; }
+#smart-drop.drag-active { background: #e9f4ff; border-color: #214f86; }
+#smart-status:empty { display: none; }
+#smart-status { color: #214f86; margin-block: .5rem; }
+#smart-drop input { height: auto; }
+#smart-confirm { display: flex; align-items: end; flex-wrap: wrap; gap: .75rem; }
+.template-delete-confirm { white-space: normal; min-width: 12rem; }
+.template-delete-confirm p { margin-block: .5rem; }
+[data-delete-confirm] { color: #9b2525; }

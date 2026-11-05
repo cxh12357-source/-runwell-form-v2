@@ -20,7 +20,18 @@
 
 固定 Demo 打开即用。表单填写支持识别客户回复、补齐必填、匹配测试套餐模板、生成和下载 Word、查询历史、导入兼容 DOCX 模板及启停。实际字段和必填条件以表单模块及所选样表为准。报价和审核仍只保留入口。
 
+Word 预览会先从文件名和套餐区提取网速、套餐名、版本、语音和折扣。识别资料与转换分开；未核对的版式只显示资料，不生成 Word。
+
+可选实时 AI：将 `online/template-ai.mjs` 部署为独立 HTTPS Worker，配置 `DEMO_ORIGIN=https://runwell-demo.shipstatic.com`、服务端 Secret `AI_API_KEY`（DeepSeek）和 `DEMO_AI_TOKEN`（至少 32 字符的随机验收口令）。上线前在网关配置请求限额并在模型账号设置用量上限；Worker 内限流只作用于单个实例。然后在 GitHub Actions 仓库变量设置 `DEMO_AI_ENDPOINT=https://你的域名/template-ai`。未配置地址时不会开放网络连接。配置后，管理员输入验收口令并主动请求 AI，只发送套餐摘要，原 Word、文件名原文与客户填写区不发送。AI 建议不改变模板版式或自动入库。
+
+「设置」需为同一 Worker 绑定专用 KV 命名空间 `INTEGRATION_SETTINGS`，并设置两个独立的随机 Secret：`SETTINGS_ADMIN_TOKEN` 和 `SETTINGS_ENCRYPTION_KEY`（各至少 32 字符，不复用 AI 验收口令）。设置页用管理员口令认证，凭据加密保存，只返回配置状态。设置页保存的 AI Key 优先于 `AI_API_KEY` 环境备用值；企查查仅配置 API Key 和 Secret Key，暂未发起查询。KV 的跨节点同步可能有延迟。
+
+在「套餐模板管理 → 智能导入 Word」拖入智云上海专线基础版（FTTR-B）不带语音原表或已转换模板（支持 5 月版和 10 月 21 日版，按版式分别入库）。页面列出识别到的月付、年付和两年付资费；每个版式只保存一份模板，员工在生成表单时选择资费。重复导入同一版式不会覆盖原记录。新模板默认停用，核对后在目录启用。模板保留原版式和空框，生成时按所选资费与客户选项涂黑对应方框。其他版式无法确认字段位置时会拒绝导入，可使用原有手动上传入口。
+
 只使用虚构客户和测试模板。录入内容、导入的模板和生成文档在浏览器内处理；模板、历史和文件保存在当前浏览器。不同设备和浏览器配置不共享，刷新后可继续使用，清除站点数据会删除本地记录。支持具备 IndexedDB、Web Locks 和 WebAssembly 的新版浏览器。
+
+模板目录可删除启用或停用的自定义模板，需二次确认。内置样表不可删除。智能导入自动创建的套餐，如果已没有其他模板，也会从套餐列表移除。已生成的历史 Word 文件仍可下载。
+可通过「清除内置测试套餐」一次性移除当前浏览器的内置样表；已有自定义模板和历史文件保留。
 
 本地构建：`npm ci --prefix demo --ignore-scripts`，`node --test demo/runtime.test.mjs`，`node demo/build.mjs`。构建需要 Node 24 和 Python 3；输出 `dist/demo-interactive`，`version.json` 的模式为 `browser-demo`。用本机静态服务器打开产物进行验收；浏览器不可直接打开文件路径。旧只读构建保留供回退。
 

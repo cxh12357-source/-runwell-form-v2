@@ -2,10 +2,13 @@
 import initSql from 'sql.js';
 import wasmBinary from 'sql.js/dist/sql-wasm.wasm';
 import { handleForms } from 'runwell:acceptance';
+import * as carrier from './carrier.mjs';
 
 const name = 'runwell-browser-demo-v1';
 const limit = 32 * 1024 * 1024;
 const schema = `
+  CREATE TABLE IF NOT EXISTS demo_settings (tenant TEXT PRIMARY KEY, hide_samples INTEGER NOT NULL);
+  CREATE TABLE IF NOT EXISTS demo_tariffs (tenant TEXT NOT NULL,id TEXT NOT NULL,data TEXT NOT NULL,PRIMARY KEY(tenant,id));
   CREATE TABLE IF NOT EXISTS qa_sessions (hash TEXT PRIMARY KEY, tenant TEXT NOT NULL, actor TEXT NOT NULL, expires INTEGER NOT NULL);
   CREATE TABLE IF NOT EXISTS qa_templates (tenant TEXT NOT NULL, id TEXT NOT NULL, tariff_id TEXT NOT NULL, name TEXT NOT NULL,
     revision TEXT NOT NULL, active INTEGER NOT NULL, mapping TEXT NOT NULL, object_key TEXT,
@@ -69,13 +72,17 @@ export async function localFetch(path, options = {}) {
         const saved = await snapshot(db);
         sql = new SQL.Database(saved?.sql);
         sql.run(schema);
+        if (!sql.exec('PRAGMA table_info(qa_templates)')[0].values.some(column => column[1] === 'imported_at')) {
+          sql.run('ALTER TABLE qa_templates ADD COLUMN imported_at TEXT');
+        }
         const files = new Map(saved?.files);
         const bucket = {
           get: key => files.has(key) ? new Blob([files.get(key)]) : null,
           put: (key, bytes) => files.set(key, bytes),
           delete: key => files.delete(key)
         };
-        const env = { DB: database(sql), BUCKET: bucket };
+        let migrated=false;
+        const env = { DB: database(sql), BUCKET: bucket, DEMO_IMPORT: {...carrier,markMigrated:()=>{migrated=true;}} };
         const headers = new Headers(options.headers);
         // The marker and demo session live entirely inside the browser; never forward them.
         headers.set('oai-authenticated-user-id', clientId);
@@ -91,7 +98,7 @@ export async function localFetch(path, options = {}) {
           }
           headers.set('Authorization', 'Bearer ' + session.token);
           const result = await handleForms(new Request(new URL(path, location.origin), { ...options, headers }), env);
-          if (result.ok && (session !== saved?.session || (options.method && options.method !== 'GET'))) {
+          if (result.ok && (migrated || session !== saved?.session || (options.method && options.method !== 'GET'))) {
             const data = sql.export();
             if (data.length + [...files.values()].reduce((sum, file) => sum + file.byteLength, 0) > limit) {
               return Response.json({ error: { message: '演示存储已满。请先下载需要保留的文件，再清理本站浏览器数据。' } }, { status: 507 });

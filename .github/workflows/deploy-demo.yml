@@ -36,6 +36,8 @@ jobs:
       - name: Test browser-only storage and form workflows
         run: node --test demo/runtime.test.mjs
       - name: Build the interactive browser demo
+        env:
+          DEMO_AI_ENDPOINT: ${{ vars.DEMO_AI_ENDPOINT }}
         run: node demo/build.mjs
       - name: Check publication credential
         if: github.event_name == 'push'

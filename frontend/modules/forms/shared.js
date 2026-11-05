@@ -15,7 +15,7 @@ export async function request(path, { method = 'GET', data, file = false, creden
   return file ? response.blob() : (await response.json()).data;
 }
 export const refresh = () => window.dispatchEvent(new Event('hashchange'));
-export const status = (root, message) => { root.querySelector('[role="status"]').textContent = message; };
+export const status = (root, message) => { root.querySelector('[role="status"]:not(#smart-status)').textContent = message; };
 export function options(rows, label = '请选择') {
   return '<option value="">' + esc(label) + '</option>' + rows.map(row =>
     '<option value="' + esc(row.id) + '">' + esc(row.name) + '</option>').join('');
