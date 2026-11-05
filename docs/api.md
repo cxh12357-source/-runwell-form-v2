@@ -40,3 +40,9 @@
 | PATCH | /templates/{id} | 管理员传布尔值 active，切换启停 |
 
 模板版本和上传内容不可覆盖。修改映射时上传新版本。重复生成请求按员工和 request_id 去重。生成记录保存分类、套餐、模板版本及文件快照。正式接口与权限待双方确认。
+
+## 私有在线验收接口
+
+`GET /forms/mode` 增加 `hosted: true`。平台验证当前登录者后，`POST /forms/test-session` 接受 `account`（见在线界面的模拟身份），在该登录者的独立验收空间签发 8 小时的临时会话。生成与历史记录按登录者和模拟员工共同隔离，模板管理另行校验管理员权限。
+
+一般接口使用响应中的 Bearer 口令。两个 `GET .../{id}/file` 下载也可使用同一响应设置的 HttpOnly、Secure、SameSite=Strict Cookie。服务端复核文件归属或模板管理权限，返回可下载的 DOCX。测试账号及数据仅用于验收。
