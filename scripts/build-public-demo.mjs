@@ -2,22 +2,20 @@ import { readFile, writeFile, mkdir, lstat, readdir } from 'node:fs/promises';
 import { resolve, dirname, posix } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL, fileURLToPath } from 'node:url';
+import { generationShell } from '../frontend/modules/forms/generate.js';
+import { templatesView } from '../frontend/modules/forms/templates.js';
 import { renderDemoCustomerInfo } from './demo-customer-info.mjs';
 
 const source = fileURLToPath(new URL('../', import.meta.url));
 const output = resolve(process.argv[2] || resolve(source, 'dist/demo'));
 const commit = process.env.GITHUB_SHA || execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8' }).trim();
 if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error('无法确认当前提交，停止发布。');
-function before(text, marker) {
-  if (!text.includes(marker)) throw new Error('展示构建需要适配最新界面：' + marker);
-  return text.slice(0, text.indexOf(marker));
-}
 function replaceRequired(text, from, to) {
   if (!text.includes(from)) throw new Error('展示构建需要适配最新界面：' + from);
   return text.replace(from, to);
 }
 const { catalog } = await import(pathToFileURL(resolve(source, 'backend/modules/catalog/data.mjs')));
-const { labels, tariffs, version, defaultMapping } = await import(pathToFileURL(resolve(source, 'backend/modules/forms/preview/rules.mjs')));
+const { labels, tariffs, version, voiceVersion, sampleMapping } = await import(pathToFileURL(resolve(source, 'backend/modules/forms/preview/rules.mjs')));
 const read = name => readFile(resolve(source, 'frontend', name), 'utf8');
 const files = [];
 const add = (path, content) => files.push({ path, content });
@@ -26,22 +24,20 @@ add('styles.css', await read('styles.css') + '\n.demo-banner{margin:0 0 24px}.de
 files.find(f => f.path === 'styles.css').content += '.required-mark{color:#b42318;font-weight:700;margin-inline-end:.35em}.customer-wide{grid-column:span 2}#billing-address-details[hidden]{display:none}@media(max-width:680px){.customer-wide{grid-column:auto}}\n';
 add('modules/home.js', (await read('modules/home.js')).replace('当前先搭建表单生成、历史记录和套餐模板管理。', '表单生成、历史记录和套餐模板管理已接入新版展示界面。'));
 add('lib/api.js', (await read('lib/api.js')).split('export async function get')[0]);
-// Include the colleague's actual rendering and classification functions, without
-// the server mutation handlers. Source files in both worktrees stay untouched.
-const generation = before(await read('modules/forms/generate.js'), 'export function bindGeneration')
-  .replace("import { bindClassification, options, request, selectors, status }", 'import { selectors }');
-const customerStart = generation.indexOf(`'<div class="divider"></div><h3>客户资料</h3>`);
-const customerEnd = generation.indexOf(`'<button id="generate"`, customerStart);
-if (customerStart < 0 || customerEnd < 0) throw new Error('无法定位生成页的客户资料区域，请检查展示构建。');
-add('modules/forms/generate.js', generation.slice(0, customerStart) + JSON.stringify(renderDemoCustomerInfo()) + ' +\n    ' + generation.slice(customerEnd));
-add('modules/forms/templates.js', before(await read('modules/forms/templates.js'), 'function readFile').replace('import { bindClassification, request, selectors, status, refresh }', 'import { selectors }').replace('可下载样表核对占位符。新上传的版本需要手动启用。', '目录仅供展示，可展开查看字段映射；上传、下载和启停暂不可用。'));
-const shared = await read('modules/forms/shared.js');
-add('modules/forms/shared.js', "import { escape as esc } from '../../lib/api.js';\n" + shared.slice(shared.indexOf('export function options')));
-add('demo-data.js', 'export const state = ' + JSON.stringify({
-  catalog: { ...catalog, versions: [version] },
+// Pre-render read-only forms at build time. The published modules contain markup only.
+const state = {
+  catalog: { ...catalog, versions: [version, voiceVersion] },
   workspace: { labels, tariffs },
-  rows: tariffs.map(t => ({ id: t.id + '-sample', tariff_id: t.id, name: t.name + ' 新装样表', revision: 'demo-1', active: true, mapping: defaultMapping }))
-}) + ';\n');
+  rows: tariffs.map(t => ({ id: t.id + '-sample', tariff_id: t.id, name: t.name + ' 新装样表', revision: 'demo-1', active: true, mapping: sampleMapping(t) }))
+};
+const templateHtml = replaceRequired(templatesView(state), '可下载样表核对占位符。新上传的版本需要手动启用。',
+  '目录仅供展示，可展开查看字段映射；上传、下载和启停暂不可用。');
+add('modules/forms/generate.js', 'export const generation = () => ' + JSON.stringify(generationShell(renderDemoCustomerInfo())) + ';\n');
+add('modules/forms/templates.js', 'export const templatesView = () => ' + JSON.stringify(templateHtml) + ';\n');
+const shared = await read('modules/forms/shared.js');
+add('modules/forms/shared.js', "import { escape as esc } from '../../lib/api.js';\n" +
+  shared.slice(shared.indexOf('export function options'), shared.indexOf('export function downloadControl')));
+add('demo-data.js', 'export const state = ' + JSON.stringify(state) + ';\n');
 add('modules/demo-forms.js', `import { generation } from './forms/generate.js';
 import { templatesView } from './forms/templates.js';
 import { bindClassification } from './forms/shared.js';

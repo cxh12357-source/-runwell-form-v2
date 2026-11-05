@@ -1,0 +1,6 @@
+{
+  "name": "runwell-online-acceptance",
+  "private": true,
+  "type": "module",
+  "dependencies": { "fflate": "0.7.4", "sax": "1.6.1" }
+}

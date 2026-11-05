@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { defaultMapping, FormError, insist, labels, match, tariffs, validateCustomer, validateMapping, version } from './rules.mjs';
+import { checkTariffMapping, sampleMapping, sampleLabels, FormError, insist, match, tariffs, validateCustomer, validateMapping } from './rules.mjs';
 
 const script = fileURLToPath(new URL('word.py', import.meta.url));
 let workers = 0;
@@ -49,10 +49,12 @@ export async function openStore(filename) {
       );
       CREATE INDEX IF NOT EXISTS records_by_owner ON records(owner);
     `);
-    const file = await wordFile({ labels, mapping: defaultMapping });
     const insert = db.prepare('INSERT OR IGNORE INTO templates VALUES(?,?,?,?,?,?,?)');
-    for (const tariff of tariffs) insert.run(tariff.id + '-sample', tariff.id, tariff.name + ' 新装样表',
-      'demo-1', 1, JSON.stringify(defaultMapping), file);
+    for (const tariff of tariffs) {
+      const mapping = sampleMapping(tariff);
+      const file = await wordFile({ labels: sampleLabels(tariff), mapping });
+      insert.run(tariff.id + '-sample', tariff.id, tariff.name + ' 新装样表', 'demo-1', 1, JSON.stringify(mapping), file);
+    }
     return new Store(db);
   } catch (error) { db.close(); throw error; }
 }
@@ -84,6 +86,7 @@ class Store {
     for (const value of [name, revision]) insist(typeof value === 'string' && value.trim() && value.length <= 80 &&
       !/[\x00-\x1f]/.test(value), '请填写模板名称和版本（最多 80 字）。');
     const mapping = validateMapping(data.mapping);
+    checkTariffMapping(mapping, tariffs.find(t => t.id === tariff_id));
     insist(typeof file === 'string' && file.length > 0 && file.length <= 699052, '请上传 512 KiB 以内的 DOCX。');
     const cleanFile = await wordFile({ file, mapping });
     const id = randomUUID();
@@ -147,7 +150,7 @@ class Store {
       else {
         verify();
         snapshot = { id: randomUUID(), created_by: owner, created_at: new Date().toISOString(), status: 'generated',
-          business_id: tariff.business_id, business_version_id: version.id, business_attribute: tariff.business_attribute,
+          business_id: tariff.business_id, business_version_id: tariff.business_version_id, business_attribute: tariff.business_attribute,
           tariff: { ...tariff }, template: { id: template.id, name: template.name, revision: template.revision } };
         this.db.prepare('INSERT INTO records VALUES(?,?,?,?,?,?)')
           .run(snapshot.id, owner, request_id, digest, JSON.stringify(snapshot), file);

@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { resolve, relative, extname, isAbsolute } from 'node:path';
+import { voiceVersion } from './modules/forms/preview/rules.mjs';
 import { catalog } from './modules/catalog/data.mjs';
 import { getFormsResource } from './modules/forms/routes.mjs';
 
@@ -27,7 +28,7 @@ export function createApp(preview = null) {
         return json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: '当前骨架仅提供读取接口，业务提交尚未开放。' } });
       }
       if (path === '/api/v1/health') return json(res, 200, { data: { status: 'ok', mode: preview ? 'forms-preview' : 'skeleton', version: '0.1.0' } });
-      if (path === '/api/v1/catalog') return json(res, 200, { data: preview ? { ...catalog, versions: [...catalog.versions, preview.version] } : catalog });
+      if (path === '/api/v1/catalog') return json(res, 200, { data: preview ? { ...catalog, versions: [...catalog.versions, preview.version, voiceVersion] } : catalog });
       const resource = getFormsResource(path);
       if (resource) return json(res, 200, resource);
       if (path.startsWith('/api/')) return json(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在或尚未开放。' } });

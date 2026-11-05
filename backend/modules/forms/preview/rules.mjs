@@ -1,10 +1,13 @@
 // 全部为虚构的联调用例。正式资费和版本需另行核实。
 export const version = { id: 'demo-no-voice', business_id: 'business-line', name: '测试版（不带语音）' };
+export const voiceVersion = { ...version, id: 'demo-voice', name: '测试版（带语音）' };
 export const tariffs = [
   { id: 'demo-a', name: '测试套餐 A', bandwidth: '100M', amount: '900.00' },
-  { id: 'demo-b', name: '测试套餐 B', bandwidth: '200M', amount: '900.00' }
-].map(row => ({ ...row, cycle: '月', business_id: version.business_id, business_version_id: version.id,
-  business_attribute: 'new', voice_required: false }));
+  { id: 'demo-b', name: '测试套餐 B', bandwidth: '200M', amount: '900.00' },
+  { id: 'demo-c', name: '测试套餐 C（含工商栏）', bandwidth: '300M', amount: '1200.00' },
+  { id: 'demo-v', name: '测试语音套餐', bandwidth: '100M', amount: '1100.00' }
+].map(row => ({ ...row, cycle: '月', business_id: version.business_id, business_version_id: row.id === 'demo-v' ? voiceVersion.id : version.id,
+  business_attribute: 'new', voice_required: row.id === 'demo-v' }));
 
 export const labels = {
   company_name: '企业全称', install_address: '安装地址', billing_address: '账单地址',
@@ -13,6 +16,25 @@ export const labels = {
   package_request: '套餐和资费'
 };
 export const defaultMapping = Object.fromEntries(Object.keys(labels).map(key => [key, key]));
+export const companyLabels = {
+  extra_credit_code: '统一社会信用代码', extra_industry: '企业所属行业',
+  extra_company_size: '企业规模', extra_computer_count: '企业计算机数量'
+};
+export const voiceLabels = {
+  extra_legal_name: '法定代表人', extra_legal_id: '法定代表人身份证号码',
+  extra_user_name: '使用人（实名制）', extra_user_id: '使用人（实名制）身份证号码'
+};
+export function sampleLabels(tariff) {
+  if (tariff.voice_required) return { ...labels, ...voiceLabels };
+  return tariff.id === 'demo-c' ? { ...labels, ...companyLabels } : labels;
+}
+export const sampleMapping = tariff => Object.fromEntries(Object.keys(sampleLabels(tariff)).map(key => [key, key]));
+export function checkTariffMapping(mapping, tariff) {
+  if (tariff?.voice_required) {
+    const fields = new Set(Object.values(mapping));
+    for (const [key, label] of Object.entries(voiceLabels)) insist(fields.has(key), '带语音模板缺少映射：' + label);
+  }
+}
 export class FormError extends Error {
   constructor(message, status = 422) { super(message); this.status = status; }
 }
@@ -49,6 +71,7 @@ export function validateMapping(mapping) {
   return mapping;
 }
 export function validateCustomer(customer, mapping, tariff) {
+  checkTariffMapping(mapping, tariff);
   const values = Object.create(null);
   for (const key of ['company_name', 'install_address', 'billing_address', 'contact_name', 'phone', 'id_number', 'email']) {
     values[key] = clean(customer[key]);
@@ -67,7 +90,8 @@ export function validateCustomer(customer, mapping, tariff) {
   values.package_request = [tariff.name, tariff.bandwidth, tariff.amount + ' 元/' + tariff.cycle].join(' · ');
   for (const field of Object.values(mapping).filter(key => key.startsWith('extra_'))) {
     values[field] = clean(customer[field]);
-    insist(values[field], '请补充模板资料：' + field.slice(6));
+    insist(values[field], '请补充模板资料：' + (voiceLabels[field] || companyLabels[field] || field.slice(6)));
+    if (['extra_legal_id','extra_user_id'].includes(field)) insist(/^\d{17}[\dX]$/i.test(values[field]), '请核对' + voiceLabels[field]);
   }
   for (const value of Object.values(values)) {
     insist(value.length <= 500 && !/[\u0000-\u001f\u007f\ud800-\udfff\ufffe\uffff]/u.test(value) && !/[{}]{2}/.test(value),

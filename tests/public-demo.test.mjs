@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -37,6 +37,15 @@ test('公网展示包仅含白名单界面和测试元数据，不带后台、�
   assert.deepEqual(JSON.parse(await readFile(join(output, 'version.json'), 'utf8')), {
     commit, branch: 'feature/project-skeleton', mode: 'static-demo'
   });
+  const { renderForms } = await import(pathToFileURL(join(output, 'modules/demo-forms.js')));
+  const generation = renderForms('/forms/generate');
+  assert.match(generation, /客户基础信息/);
+  assert.match(generation, /name="company_name"[^>]*disabled/);
+  assert.doesNotMatch(generation, /id="reply-text"/);
+  const templates = renderForms('/forms/templates');
+  assert.match(templates, /测试语音套餐/);
+  assert.match(templates, /extra_legal_id/);
+  assert.doesNotMatch(templates, /href="\/api\//);
   const app = await readFile(join(output, 'app.js'), 'utf8');
   assert.match(app, /1234567/);
   assert.doesNotMatch(app, /notice demo-banner/);
