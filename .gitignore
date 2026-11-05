@@ -231,3 +231,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Frontend source uses lib/ for shared request and escaping helpers.
+!frontend/lib/
+.forms-preview/
