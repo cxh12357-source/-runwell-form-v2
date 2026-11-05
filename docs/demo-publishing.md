@@ -24,6 +24,8 @@
 
 只使用虚构客户和测试模板。录入内容、导入的模板和生成文档在浏览器内处理；模板、历史和文件保存在当前浏览器。不同设备和浏览器配置不共享，刷新后可继续使用，清除站点数据会删除本地记录。支持具备 IndexedDB、Web Locks 和 WebAssembly 的新版浏览器。
 
+模板目录可删除已停用的自定义模板，需二次确认。内置样表不可删除。智能导入自动创建的套餐，如果已没有其他模板，也会从套餐列表移除。已生成的历史 Word 文件仍可下载。
+
 本地构建：`npm ci --prefix demo --ignore-scripts`，`node --test demo/runtime.test.mjs`，`node demo/build.mjs`。构建需要 Node 24 和 Python 3；输出 `dist/demo-interactive`，`version.json` 的模式为 `browser-demo`。用本机静态服务器打开产物进行验收；浏览器不可直接打开文件路径。旧只读构建保留供回退。
 
 交互演示复用 oneaskq 的验收页面、匹配、校验与 Word 渲染代码。`demo/` 负责静态打包和本地存储；真实客户数据、正式模板和员工权限仍由正式系统管理。本机验收模式和私有托管模式不受影响。

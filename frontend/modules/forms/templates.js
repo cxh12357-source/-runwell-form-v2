@@ -19,6 +19,9 @@ export function templatesView({ rows, workspace, hosted }) {
       '</td><td>' + esc(t.name) + '</td><td>' + esc(t.revision) + '</td><td>' + (t.active ? '已启用' : '已停用') + '</td><td>' +
       '<button type="button" data-active="' + String(!t.active) + '" data-id="' + esc(t.id) + '">' + (t.active ? '停用' : '启用') +
       '</button> ' + downloadControl('/templates/' + t.id + '/file', '下载模板', hosted) +
+      (t.deletable ? ' <button type="button" data-delete-open>删除</button><div class="template-delete-confirm" hidden>' +
+      '<p>删除「'+esc(t.name)+'」版本 '+esc(t.revision)+'？已生成的 Word 仍可从历史记录下载。</p>' +
+      '<button type="button" data-delete-cancel>取消</button> <button type="button" data-delete-confirm="'+esc(t.id)+'">确认删除</button></div>' : '') +
       '<details><summary>查看映射</summary><pre>' + esc(JSON.stringify(t.mapping, null, 2)) + '</pre></details></td></tr>'; }).join('') + '</tbody></table></div>';
 }
 function readFile(file) {
@@ -33,6 +36,8 @@ export function bindTemplates(root, state) {
   const form = root.querySelector('#template-form');
   const selection = bindClassification(form, { ...state, workspace: { ...state.workspace, tariffs: state.workspace.tariffs.filter(t=>!t.carrier_profile) } });
   if(state.workspace.smart_import) bindSmartImport(root);
+  const deleteNotice=sessionStorage.getItem('runwell-template-delete-notice');
+  if(deleteNotice){sessionStorage.removeItem('runwell-template-delete-notice');status(root,deleteNotice);}
   form.onchange = () => {
     const { biz, ver, attr, tariff } = form.elements;
     const selected = { business_id: biz.value, business_version_id: ver.value, business_attribute: attr.value, id: tariff.value };
@@ -57,6 +62,19 @@ export function bindTemplates(root, state) {
     } catch (error) { status(root, error.message); } finally { submit.disabled = false; }
   };
   root.querySelector('#template-rows').onclick = async event => {
+    const remove=event.target.closest('button[data-delete-open], button[data-delete-cancel], button[data-delete-confirm]');
+    if(remove){
+      const row=remove.closest('tr'), panel=row.querySelector('.template-delete-confirm'), opener=row.querySelector('[data-delete-open]');
+      const confirm=panel.querySelector('[data-delete-confirm]'), cancel=panel.querySelector('[data-delete-cancel]');
+      if(remove===opener){panel.hidden=false; opener.hidden=true; cancel.focus(); return;}
+      if(remove===cancel){panel.hidden=true; opener.hidden=false; opener.focus(); return;}
+      confirm.disabled=cancel.disabled=true;
+      try {
+        await request('/templates/'+confirm.dataset.deleteConfirm,{method:'DELETE'});
+        if(root.isConnected){sessionStorage.setItem('runwell-template-delete-notice','模板已删除，历史 Word 文件仍可下载。');refresh();}
+      } catch(error){status(root,error.message);confirm.disabled=cancel.disabled=false;}
+      return;
+    }
     const button = event.target.closest('button[data-active]');
     if (!button) return;
     button.disabled = true;

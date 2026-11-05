@@ -11,3 +11,6 @@
 #smart-status { color: #214f86; margin-block: .5rem; }
 #smart-drop input { height: auto; }
 #smart-confirm { display: flex; align-items: end; flex-wrap: wrap; gap: .75rem; }
+.template-delete-confirm { white-space: normal; min-width: 12rem; }
+.template-delete-confirm p { margin-block: .5rem; }
+[data-delete-confirm] { color: #9b2525; }

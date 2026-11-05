@@ -24,8 +24,9 @@ async function body(req) {
   insist(isObject(data),'请求内容格式错误。',400);return data;
 }
 function unpack(t){return {...t,active:Boolean(t.active),mapping:JSON.parse(t.mapping)};}
-async function templates(db,tenant) {
-  const rows=await db.prepare('SELECT id,tariff_id,name,revision,active,mapping FROM qa_templates WHERE tenant=? ORDER BY id').bind(tenant).all();
+async function templates(db,tenant,showDelete=false) {
+  const fields=showDelete?', (object_key IS NOT NULL AND active=0) AS deletable':'';
+  const rows=await db.prepare('SELECT id,tariff_id,name,revision,active,mapping'+fields+' FROM qa_templates WHERE tenant=? ORDER BY id').bind(tenant).all();
   return rows.results.map(unpack);
 }
 async function directory(db,tenant,plugin){
@@ -191,9 +192,24 @@ export async function handleForms(req,env) {
       insist(accounts[actor].role==='admin','仅模板管理员可执行此操作。',403);
       if(plugin && method==='POST' && ['/forms/templates/inspect','/forms/templates/import'].includes(path))
         return await importCarrier(await body(req),db,bucket,tenant,plugin,path.endsWith('/import'));
-      if(path==='/forms/templates' && method==='GET')return list(await templates(db,tenant));
+      if(path==='/forms/templates' && method==='GET')return list(await templates(db,tenant,Boolean(plugin)));
       if(path==='/forms/templates' && method==='POST')return await upload(await body(req),db,bucket,tenant);
       const item=/^\/forms\/templates\/([\w-]+)(\/file)?$/.exec(path);
+      if(plugin && item && !item[2] && method==='DELETE'){
+        const id=item[1];
+        const t=await db.prepare('SELECT object_key,tariff_id,active FROM qa_templates WHERE tenant=? AND id=?').bind(tenant,id).first();
+        insist(t,'找不到模板。',404);
+        insist(t.object_key,'内置样表不能删除。',403);
+        insist(!t.active,'请先停用模板，再删除。',409);
+        const [deleted]=await db.batch([
+          db.prepare('DELETE FROM qa_templates WHERE tenant=? AND id=? AND active=0 AND object_key=?').bind(tenant,id,t.object_key),
+          db.prepare('DELETE FROM demo_tariffs WHERE tenant=? AND id=? AND NOT EXISTS (SELECT 1 FROM qa_templates WHERE tenant=? AND tariff_id=?)')
+            .bind(tenant,t.tariff_id,tenant,t.tariff_id)
+        ]);
+        insist(resultChanges(deleted),'模板状态已变化，请刷新后再试。',409);
+        await bucket.delete(t.object_key);
+        return json({id});
+      }
       if(item?.[2] && method==='GET'){
         const t=await db.prepare('SELECT object_key,tariff_id FROM qa_templates WHERE tenant=? AND id=?').bind(tenant,item[1]).first();
         insist(t,'找不到模板。',404);return documentFile(await bytesFor(bucket,t.object_key,t.tariff_id));

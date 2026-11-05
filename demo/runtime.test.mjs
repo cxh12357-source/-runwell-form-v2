@@ -52,11 +52,24 @@ test('免登录运行：拒绝缺项、生成 Word、刷新后下载、上传及
   const added = await result(call('/templates', 'POST', { name: name + '本机样表', revision: 'test-2', tariff_id: id,
     mapping: templates.find(t => t.id === sampleId).mapping, file: Buffer.from(await templateFile.arrayBuffer()).toString('base64') }), 201);
   assert.equal(added.active, false);
+  assert.ok((await result(call('/templates'))).find(t => t.id === added.id).deletable);
+  assert.equal((await call('/templates/' + sampleId, 'DELETE')).status, 403);
   await result(call('/templates/' + added.id, 'PATCH', { active: true }));
-  assert.equal((await match()).status, 'ambiguous');
+  assert.equal((await call('/templates/' + added.id, 'DELETE')).status, 409);
+  const ambiguous = await match();
+  assert.equal(ambiguous.status, 'ambiguous');
   assert.equal((await call('/generate', 'POST', { ...input, request_id: crypto.randomUUID() })).status, 409);
+  const customRecord = await result(call('/generate', 'POST', {
+    ...input, template_id: added.id, match_token: ambiguous.match_token, request_id: crypto.randomUUID()
+  }));
   await result(call('/templates/' + added.id, 'PATCH', { active: false }));
   assert.equal((await match()).status, 'unique');
+  await result(call('/templates/' + added.id, 'DELETE'));
+  ({ localFetch } = await import(source + '#deleted'));
+  assert.equal((await result(call('/templates'))).some(t => t.id === added.id), false);
+  assert.equal((await call('/templates/' + added.id + '/file')).status, 404);
+  assert.equal((await call('/records/' + customRecord.id + '/file')).status, 200);
+  assert.ok((await result(call('/workspace'))).tariffs.some(t => t.id === id));
   globalThis.indexedDB = new IDBFactory();
   assert.deepEqual(await result(call('/records')), []);
   assert.equal((await result(call('/templates'))).some(t => t.id === added.id), false);
