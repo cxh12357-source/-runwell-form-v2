@@ -1,0 +1,14 @@
+{
+  "name": "runwell-browser-demo",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "esbuild-wasm": "0.28.2",
+    "fflate": "0.7.4",
+    "sax": "1.6.1",
+    "sql.js": "1.15.2"
+  },
+  "devDependencies": {
+    "fake-indexeddb": "6.2.5"
+  }
+}

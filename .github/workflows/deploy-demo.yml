@@ -31,8 +31,12 @@ jobs:
           python-version: '3.12'
       - name: Test code and demo packaging
         run: node --test tests/*.test.mjs
-      - name: Build the read-only public demo
-        run: node scripts/build-public-demo.mjs
+      - name: Install the browser demo build dependencies
+        run: npm ci --prefix demo --ignore-scripts
+      - name: Test browser-only storage and form workflows
+        run: node --test demo/runtime.test.mjs
+      - name: Build the interactive browser demo
+        run: node demo/build.mjs
       - name: Check publication credential
         if: github.event_name == 'push'
         env:
@@ -47,7 +51,7 @@ jobs:
         uses: shipstatic/action@7aa499b8eaaf25ed583c5112301f005b5c108e12 # v3
         with:
           token: ${{ secrets.SHIP_TOKEN }}
-          path: ./dist/demo
+          path: ./dist/demo-interactive
           domain: runwell-demo.shipstatic.com
           labels: runwell-demo,shared-preview
           github-token: ''
