@@ -3,17 +3,22 @@ import { bindClassification, downloadControl, request, selectors, status, refres
 
 export function templatesView({ rows, workspace, hosted }) {
   const mapping = Object.fromEntries(Object.keys(workspace.labels).map(key => [key, key]));
-  return '<form id="template-form">' + selectors() + '<div class="field-grid"><label>模板名称<input name="name" required maxlength="80"></label>' +
+  const smart = workspace.smart_import ? '<section class="smart-import" aria-labelledby="smart-title"><h3 id="smart-title">智能导入 Word</h3>' +
+    '<p>支持智云上海专线基础版（FTTR-B）2026/A 不带语音。演示请使用虚构资料。</p>' +
+    '<div id="smart-drop"><label for="smart-file">拖入 Word 表单，或点击选择文件</label> <input id="smart-file" type="file" accept=".docx"></div>' +
+    '<div id="smart-preview" aria-live="polite"></div></section><div class="divider"></div>' : '';
+  return smart + '<form id="template-form">' + selectors() + '<div class="field-grid"><label>模板名称<input name="name" required maxlength="80"></label>' +
     '<label>版本号<input name="revision" required maxlength="80"></label><label>Word 模板（.docx）<input name="file" type="file" accept=".docx" required></label></div>' +
     '<details><summary>字段映射</summary><p>左侧是 Word 中双花括号内的占位符，右侧是资料字段。其他必填资料可用 extra_ 开头的字段名。</p>' +
     '<textarea name="mapping" aria-label="字段映射 JSON" rows="14" required style="width:100%;box-sizing:border-box">' + esc(JSON.stringify(mapping, null, 2)) +
     '</textarea></details><button class="button">上传新版本</button></form><div class="divider"></div><h3>模板目录</h3>' +
     '<p class="hint">可下载样表核对占位符。新上传的版本需要手动启用。</p><div class="table-wrap"><table><thead><tr><th>套餐</th><th>模板</th><th>版本</th><th>状态</th><th>操作</th></tr></thead><tbody id="template-rows">' +
-    rows.map(t => '<tr data-tariff="' + esc(t.tariff_id) + '"><td>' + esc(workspace.tariffs.find(a => a.id === t.tariff_id)?.name) +
+    rows.map(t => { const tariff=workspace.tariffs.find(a => a.id === t.tariff_id); return '<tr data-tariff="' + esc(t.tariff_id) + '"><td>' + esc(tariff?.name) +
+      (tariff?.carrier_profile ? '<br>'+esc(tariff.bandwidth+' · '+tariff.amount+' 元/'+tariff.cycle+'/线') : '') +
       '</td><td>' + esc(t.name) + '</td><td>' + esc(t.revision) + '</td><td>' + (t.active ? '已启用' : '已停用') + '</td><td>' +
       '<button type="button" data-active="' + String(!t.active) + '" data-id="' + esc(t.id) + '">' + (t.active ? '停用' : '启用') +
       '</button> ' + downloadControl('/templates/' + t.id + '/file', '下载模板', hosted) +
-      '<details><summary>查看映射</summary><pre>' + esc(JSON.stringify(t.mapping, null, 2)) + '</pre></details></td></tr>').join('') + '</tbody></table></div>';
+      '<details><summary>查看映射</summary><pre>' + esc(JSON.stringify(t.mapping, null, 2)) + '</pre></details></td></tr>'; }).join('') + '</tbody></table></div>';
 }
 function readFile(file) {
   return new Promise((resolve, reject) => {
@@ -25,7 +30,8 @@ function readFile(file) {
 }
 export function bindTemplates(root, state) {
   const form = root.querySelector('#template-form');
-  const selection = bindClassification(form, state);
+  const selection = bindClassification(form, { ...state, workspace: { ...state.workspace, tariffs: state.workspace.tariffs.filter(t=>!t.carrier_profile) } });
+  if(state.workspace.smart_import) bindSmartImport(root);
   form.onchange = () => {
     const { biz, ver, attr, tariff } = form.elements;
     const selected = { business_id: biz.value, business_version_id: ver.value, business_attribute: attr.value, id: tariff.value };
@@ -58,4 +64,47 @@ export function bindTemplates(root, state) {
       if (root.isConnected) refresh();
     } catch (error) { status(root, error.message); } finally { button.disabled = false; }
   };
+}
+
+function bindSmartImport(root) {
+  const drop=root.querySelector('#smart-drop'), picker=root.querySelector('#smart-file'), preview=root.querySelector('#smart-preview');
+  let epoch=0;
+  async function inspect(files) {
+    const ticket=++epoch;
+    preview.replaceChildren();
+    if(files.length!==1 || !/\.docx$/i.test(files[0].name) || !files[0].size || files[0].size>524288){
+      status(root,'请一次选择一份 512 KiB 以内的 DOCX。'); return;
+    }
+    status(root,'正在解析 Word…');
+    try {
+      const file=await readFile(files[0]);
+      const result=await request('/templates/inspect',{method:'POST',data:{file}});
+      if(ticket!==epoch || !root.isConnected)return;
+      status(root,'');
+      preview.innerHTML='<p>识别到：<strong>'+esc(result.name)+'</strong> · 商务专线／不带语音／新装</p>'+
+        '<p>已定位 '+Number(result.tags.length)+' 个占位符，所有方框默认留空。</p><form id="smart-confirm"><label>确认基础资费<select name="rate" required>'+
+        '<option value="">请选择客户适用的套餐资费</option>'+result.rates.map(r=>'<option value="'+esc(r.key)+'">'+esc(r.bandwidth+' · '+r.amount+' 元/'+r.cycle+'/线')+'</option>').join('')+
+        '</select></label> <button class="button">导入模板并新增套餐</button></form>';
+      const confirm=preview.querySelector('form');
+      confirm.onsubmit=async event=>{
+        event.preventDefault();
+        const button=confirm.querySelector('button');button.disabled=true;picker.disabled=true;
+        try {
+          const saved=await request('/templates/import',{method:'POST',data:{file,rate:confirm.elements.rate.value}});
+          if(root.isConnected){
+            const notice=saved.duplicate?'该资费已导入，未重复新增。':'模板和套餐已录入。请在目录中启用模板后再生成 Word。';
+            sessionStorage.setItem('runwell-smart-import-notice',notice);
+            refresh();
+          }
+        } catch(error){status(root,error.message);}
+        finally{button.disabled=false;picker.disabled=false;}
+      };
+    } catch(error){if(ticket===epoch && root.isConnected)status(root,error.message);}
+  }
+  const notice=sessionStorage.getItem('runwell-smart-import-notice');
+  if(notice){sessionStorage.removeItem('runwell-smart-import-notice');status(root,notice);}
+  picker.onchange=()=>{const files=Array.from(picker.files);picker.value='';inspect(files);};
+  drop.ondragover=event=>{event.preventDefault();if(!picker.disabled)drop.classList.add('drag-active');};
+  drop.ondragleave=()=>drop.classList.remove('drag-active');
+  drop.ondrop=event=>{event.preventDefault();drop.classList.remove('drag-active');if(!picker.disabled)inspect(Array.from(event.dataTransfer.files));};
 }

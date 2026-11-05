@@ -2,10 +2,12 @@
 import initSql from 'sql.js';
 import wasmBinary from 'sql.js/dist/sql-wasm.wasm';
 import { handleForms } from 'runwell:acceptance';
+import * as carrier from './carrier.mjs';
 
 const name = 'runwell-browser-demo-v1';
 const limit = 32 * 1024 * 1024;
 const schema = `
+  CREATE TABLE IF NOT EXISTS demo_tariffs (tenant TEXT NOT NULL,id TEXT NOT NULL,data TEXT NOT NULL,PRIMARY KEY(tenant,id));
   CREATE TABLE IF NOT EXISTS qa_sessions (hash TEXT PRIMARY KEY, tenant TEXT NOT NULL, actor TEXT NOT NULL, expires INTEGER NOT NULL);
   CREATE TABLE IF NOT EXISTS qa_templates (tenant TEXT NOT NULL, id TEXT NOT NULL, tariff_id TEXT NOT NULL, name TEXT NOT NULL,
     revision TEXT NOT NULL, active INTEGER NOT NULL, mapping TEXT NOT NULL, object_key TEXT,
@@ -75,7 +77,7 @@ export async function localFetch(path, options = {}) {
           put: (key, bytes) => files.set(key, bytes),
           delete: key => files.delete(key)
         };
-        const env = { DB: database(sql), BUCKET: bucket };
+        const env = { DB: database(sql), BUCKET: bucket, DEMO_IMPORT: carrier };
         const headers = new Headers(options.headers);
         // The marker and demo session live entirely inside the browser; never forward them.
         headers.set('oai-authenticated-user-id', clientId);

@@ -52,7 +52,11 @@ export function bindGeneration(root, state) {
     template = candidates.find(row => row.id === id);
     const keys = template?.extra_fields ?? [];
     intake.setExtras(keys);
-    extra.innerHTML = keys.filter(k => !intakeExtraKeys.includes(k)).map(k => field(k, '模板必填 · ' + k.slice(6))).join('');
+    const custom=template?.carrier_controls;
+    extra.innerHTML = custom ? custom.groups.map(g=>'<label>'+esc(g.label)+'<select name="'+esc(g.key)+'" '+(g.required?'required':'')+'>'+options(g.options.map((name,id)=>({name,id})),g.required?'请选择':'不订购')+'</select></label>').join('')+
+      custom.inputs.filter(([key])=>!intakeExtraKeys.includes(key)).map(([key,label,required])=>'<label>'+esc(label)+'<input name="'+esc(key)+'" '+(required?'required':'')+' maxlength="500" autocomplete="off"></label>').join('') :
+      keys.filter(k => !intakeExtraKeys.includes(k)).map(k => field(k, '模板必填 · ' + k.slice(6))).join('');
+    form.elements.billing_address.disabled=false;
     generate.disabled = busy || !template;
     requestId = undefined;
   }
@@ -68,6 +72,7 @@ export function bindGeneration(root, state) {
   form.addEventListener('change', event => {
     if (['biz','ver','attr','tariff'].includes(event.target.name)) invalidate();
     if (event.target.name === 'candidate') choose(event.target.value);
+    if(event.target.name==='choice_billing')form.elements.billing_address.disabled=event.target.value==='0';
     if (event.target.name === 'payment_method') {
       bank.disabled = bank.hidden = event.target.value !== 'collection';
       if (bank.disabled) for (const input of bank.querySelectorAll('input')) input.value = '';
@@ -103,6 +108,7 @@ export function bindGeneration(root, state) {
     for (const [name, value] of new FormData(form)) {
       if (customerFields.includes(name) || ['payment_method','bank_name','bank_account'].includes(name) || template.extra_fields?.includes(name)) customer[name] = value;
     }
+    if(customer.choice_billing==='0')customer.billing_address=customer.install_address;
     requestId ??= crypto.randomUUID();
     busy = true;
     generate.disabled = true;

@@ -28,11 +28,21 @@ async function templates(db,tenant) {
   const rows=await db.prepare('SELECT id,tariff_id,name,revision,active,mapping FROM qa_templates WHERE tenant=? ORDER BY id').bind(tenant).all();
   return rows.results.map(unpack);
 }
-async function candidates(selection,db,tenant){
+async function directory(db,tenant,plugin){
+  if(!plugin)return tariffs;
+  const rows=await db.prepare('SELECT data FROM demo_tariffs WHERE tenant=? ORDER BY id').bind(tenant).all();
+  return [...tariffs,...rows.results.map(row=>JSON.parse(row.data))];
+}
+async function candidates(selection,db,tenant,plugin){
   insist(isObject(selection),'请选择业务和套餐。');
-  const rows=await templates(db,tenant), res=match(selection,rows);
+  const plans=await directory(db,tenant,plugin);
+  const rows=await templates(db,tenant), res=match(selection,rows,plans);
   for(const c of res.candidates){
     c.extra_fields=[...new Set(Object.values(rows.find(t=>t.id===c.id).mapping).filter(k=>k.startsWith('extra_')))];
+    if(plans.find(t=>t.id===selection.tariff_id)?.carrier_profile && c.id.startsWith('carrier-')){
+      c.carrier_controls=plugin.controls;
+      c.extra_fields=[...plugin.controls.inputs.map(x=>x[0]),...plugin.controls.groups.map(x=>x.key)];
+    }
   }
   res.match_token=await signature(JSON.stringify(res.candidates));
   return res;
@@ -75,19 +85,25 @@ async function upload(data,db,bucket,tenant) {
   if(!resultChanges(result)){await bucket.delete(key);throw new FormError('相同套餐下已有此模板版本。',409);}
   return json({id,active:false},201);
 }
-async function generate(data,db,bucket,tenant,actor) {
+async function generate(data,db,bucket,tenant,actor,plugin) {
   const {selection,customer,request_id,template_id}=data;
   insist(uuid(request_id) && isObject(selection) && isObject(customer),'请完整填写资料并重新核对。');
   const digest=await signature(JSON.stringify([Object.entries(selection).sort(),template_id,Object.entries(customer).sort()]));
   const existing=()=>db.prepare('SELECT digest,snapshot FROM qa_records WHERE tenant=? AND actor=? AND request_id=?').bind(tenant,actor,request_id).first();
   function replay(r){insist(r.digest===digest,'请求已用于其他资料，请重新核对。',409);return json(JSON.parse(r.snapshot));}
   const previous=await existing();if(previous)return replay(previous);
-  const matches=await candidates(selection,db,tenant);
+  const matches=await candidates(selection,db,tenant,plugin);
   insist(matches.match_token===data.match_token && matches.candidates.some(c=>c.id===template_id),'候选模板已变化，请重新匹配并确认。',409);
   const t=await db.prepare('SELECT * FROM qa_templates WHERE tenant=? AND id=?').bind(tenant,template_id).first();
-  const tariff=tariffs.find(t=>t.id===selection.tariff_id);
-  const mapping=JSON.parse(t.mapping), values=validateCustomer(customer,mapping,tariff);
-  const file=renderWord(await bytesFor(bucket,t.object_key,t.tariff_id),mapping,values);
+  const tariff=(await directory(db,tenant,plugin)).find(t=>t.id===selection.tariff_id);
+  const mapping=JSON.parse(t.mapping);
+  const bytes=await bytesFor(bucket,t.object_key,t.tariff_id);
+  let file;
+  if(tariff.carrier_profile && template_id.startsWith('carrier-')){
+    validateCustomer(customer,{},tariff);
+    try { file=plugin.renderCarrier(bytes,customer,tariff); }
+    catch(error) { throw new FormError(error.message); }
+  } else file=renderWord(bytes,mapping,validateCustomer(customer,mapping,tariff));
   const id=crypto.randomUUID(), key='records/'+tenant+'/'+id;
   const snapshot={id,created_by:accounts[actor].id,created_at:new Date().toISOString(),status:'generated',
     business_id:tariff.business_id,business_version_id:tariff.business_version_id,business_attribute:tariff.business_attribute,
@@ -106,6 +122,32 @@ async function generate(data,db,bucket,tenant,actor) {
   throw new FormError('候选模板已变化，请重新匹配。',409);
 }
 
+async function importCarrier(data,db,bucket,tenant,plugin,save) {
+  insist(typeof data.file==='string' && data.file.length>0 && data.file.length<=699052,'请选择 512 KiB 以内的 DOCX。');
+  let info;
+  try { info=plugin.analyzeCarrier(Uint8Array.from(atob(data.file),c=>c.charCodeAt(0))); }
+  catch(error) { throw new FormError(error.message); }
+  const {profile,name,rates,tags,file}=info;
+  if(!save)return json({name,rates,tags});
+  const rate=rates.find(r=>r.key===data.rate);
+  insist(rate,'请选择管理员已核对的基础资费。');
+  const id='carrier-'+(await signature(JSON.stringify([profile,rate.bandwidth,rate.amount,rate.cycle]))).slice(0,24);
+  const tariff={id,name,bandwidth:rate.bandwidth,amount:rate.amount,cycle:rate.cycle,business_id:version.business_id,
+    business_version_id:version.id,business_attribute:'new',voice_required:false,carrier_profile:profile,carrier_rate:rate.key};
+  const already=await db.prepare('SELECT id FROM qa_templates WHERE tenant=? AND id=?').bind(tenant,id).first();
+  if(already)return json({id,duplicate:true});
+  const key='templates/'+tenant+'/'+id;
+  await bucket.put(key,file);
+  try {
+    await db.batch([
+      db.prepare('INSERT INTO demo_tariffs(tenant,id,data) VALUES(?,?,?)').bind(tenant,id,JSON.stringify(tariff)),
+      db.prepare('INSERT INTO qa_templates(tenant,id,tariff_id,name,revision,active,mapping,object_key) VALUES(?,?,?,?,?,0,?,?)')
+        .bind(tenant,id,id,name+' 申请登记表','2026/A',JSON.stringify(Object.fromEntries(tags.map(tag=>[tag,tag]))),key)
+    ]);
+  } catch(error){await bucket.delete(key);throw error;}
+  return json({id,duplicate:false},201);
+}
+
 export async function handleForms(req,env) {
   try {
     const url=new URL(req.url), path=url.pathname.replace(/^\/api\/v1/,''), method=req.method;
@@ -120,7 +162,7 @@ export async function handleForms(req,env) {
     if(path==='/health' && method==='GET')return json({status:'ok',mode:'hosted-acceptance'});
     if(path==='/catalog' && method==='GET')return json({...catalog,versions:[...catalog.versions,version,voiceVersion]});
     insist(env.DB && env.BUCKET,'验收存储尚未就绪。',503);
-    const db=env.DB, bucket=env.BUCKET;
+    const db=env.DB, bucket=env.BUCKET, plugin=env.DEMO_IMPORT;
     if(path==='/forms/test-session' && method==='POST')return await startSession(req,db,tenant);
     let auth=req.headers.get('Authorization')||'';
     if (!auth && method==='GET' && /^\/forms\/(records|templates)\/[\w-]+\/file$/.test(path)) {
@@ -132,9 +174,9 @@ export async function handleForms(req,env) {
       .bind(await signature(auth.slice(7)),tenant,Date.now()).first();
     insist(entry,'验收身份已过期，请重新进入。',401);
     const actor=entry.actor;
-    if(path==='/forms/workspace' && method==='GET')return json({actor:accounts[actor],tariffs,labels});
-    if(path==='/forms/match' && method==='POST')return json(await candidates((await body(req)).selection,db,tenant));
-    if(path==='/forms/generate' && method==='POST')return await generate(await body(req),db,bucket,tenant,actor);
+    if(path==='/forms/workspace' && method==='GET')return json({actor:accounts[actor],tariffs:await directory(db,tenant,plugin),labels,smart_import:Boolean(plugin)});
+    if(path==='/forms/match' && method==='POST')return json(await candidates((await body(req)).selection,db,tenant,plugin));
+    if(path==='/forms/generate' && method==='POST')return await generate(await body(req),db,bucket,tenant,actor,plugin);
     if(path==='/forms/records' && method==='GET'){
       const rows=await db.prepare('SELECT snapshot FROM qa_records WHERE tenant=? AND actor=? ORDER BY rowid DESC').bind(tenant,actor).all();
       return list(rows.results.map(r=>JSON.parse(r.snapshot)));
@@ -146,6 +188,8 @@ export async function handleForms(req,env) {
     }
     if(path==='/forms/templates'||path.startsWith('/forms/templates/')){
       insist(accounts[actor].role==='admin','仅模板管理员可执行此操作。',403);
+      if(plugin && method==='POST' && ['/forms/templates/inspect','/forms/templates/import'].includes(path))
+        return await importCarrier(await body(req),db,bucket,tenant,plugin,path.endsWith('/import'));
       if(path==='/forms/templates' && method==='GET')return list(await templates(db,tenant));
       if(path==='/forms/templates' && method==='POST')return await upload(await body(req),db,bucket,tenant);
       const item=/^\/forms\/templates\/([\w-]+)(\/file)?$/.exec(path);
