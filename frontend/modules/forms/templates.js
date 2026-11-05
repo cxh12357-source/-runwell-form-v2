@@ -1,7 +1,7 @@
 import { escape as esc } from '../../lib/api.js';
-import { bindClassification, request, selectors, status, refresh } from './shared.js';
+import { bindClassification, downloadControl, request, selectors, status, refresh } from './shared.js';
 
-export function templatesView({ rows, workspace }) {
+export function templatesView({ rows, workspace, hosted }) {
   const mapping = Object.fromEntries(Object.keys(workspace.labels).map(key => [key, key]));
   return '<form id="template-form">' + selectors() + '<div class="field-grid"><label>模板名称<input name="name" required maxlength="80"></label>' +
     '<label>版本号<input name="revision" required maxlength="80"></label><label>Word 模板（.docx）<input name="file" type="file" accept=".docx" required></label></div>' +
@@ -12,7 +12,7 @@ export function templatesView({ rows, workspace }) {
     rows.map(t => '<tr data-tariff="' + esc(t.tariff_id) + '"><td>' + esc(workspace.tariffs.find(a => a.id === t.tariff_id)?.name) +
       '</td><td>' + esc(t.name) + '</td><td>' + esc(t.revision) + '</td><td>' + (t.active ? '已启用' : '已停用') + '</td><td>' +
       '<button type="button" data-active="' + String(!t.active) + '" data-id="' + esc(t.id) + '">' + (t.active ? '停用' : '启用') +
-      '</button> <button type="button" data-file="/templates/' + esc(t.id) + '/file">下载模板</button>' +
+      '</button> ' + downloadControl('/templates/' + t.id + '/file', '下载模板', hosted) +
       '<details><summary>查看映射</summary><pre>' + esc(JSON.stringify(t.mapping, null, 2)) + '</pre></details></td></tr>').join('') + '</tbody></table></div>';
 }
 function readFile(file) {
