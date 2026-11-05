@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdir, lstat, readdir } from 'node:fs/promises';
 import { resolve, dirname, posix } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL, fileURLToPath } from 'node:url';
+import { renderDemoCustomerInfo } from './demo-customer-info.mjs';
 
 const source = fileURLToPath(new URL('../', import.meta.url));
 const output = resolve(process.argv[2] || resolve(source, 'dist/demo'));
@@ -22,11 +23,17 @@ const files = [];
 const add = (path, content) => files.push({ path, content });
 add('index.html', (await read('index.html')).replace('href="/styles.css"', 'href="./styles.css"').replace('src="/app.js"', 'src="./app.js"').replace('本地开发预览', '免登录展示版 · ' + commit.slice(0, 7)));
 add('styles.css', await read('styles.css') + '\n.demo-banner{margin:0 0 24px}.demo-banner p+p{margin-top:6px}#bank-fields[hidden]{display:none}button:disabled{cursor:not-allowed;opacity:.65}input[type=file]{height:auto}textarea:disabled{color:#64778b;background:#f6f8fb}td{padding:20px 14px}pre{white-space:pre-wrap;max-width:480px}.demo-version{color:#7a899b;font-size:12px;margin-top:28px}\n');
+files.find(f => f.path === 'styles.css').content += '.required-mark{color:#b42318;font-weight:700;margin-inline-end:.35em}.customer-wide{grid-column:span 2}#billing-address-details[hidden]{display:none}@media(max-width:680px){.customer-wide{grid-column:auto}}\n';
 add('modules/home.js', (await read('modules/home.js')).replace('当前先搭建表单生成、历史记录和套餐模板管理。', '表单生成、历史记录和套餐模板管理已接入新版展示界面。'));
 add('lib/api.js', (await read('lib/api.js')).split('export async function get')[0]);
 // Include the colleague's actual rendering and classification functions, without
 // the server mutation handlers. Source files in both worktrees stay untouched.
-add('modules/forms/generate.js', before(await read('modules/forms/generate.js'), 'export function bindGeneration').replace("import { bindClassification, options, request, selectors, status }", 'import { selectors }'));
+const generation = before(await read('modules/forms/generate.js'), 'export function bindGeneration')
+  .replace("import { bindClassification, options, request, selectors, status }", 'import { selectors }');
+const customerStart = generation.indexOf(`'<div class="divider"></div><h3>客户资料</h3>`);
+const customerEnd = generation.indexOf(`'<button id="generate"`, customerStart);
+if (customerStart < 0 || customerEnd < 0) throw new Error('无法定位生成页的客户资料区域，请检查展示构建。');
+add('modules/forms/generate.js', generation.slice(0, customerStart) + JSON.stringify(renderDemoCustomerInfo()) + ' +\n    ' + generation.slice(customerEnd));
 add('modules/forms/templates.js', before(await read('modules/forms/templates.js'), 'function readFile').replace('import { bindClassification, request, selectors, status, refresh }', 'import { selectors }').replace('可下载样表核对占位符。新上传的版本需要手动启用。', '目录仅供展示，可展开查看字段映射；上传、下载和启停暂不可用。'));
 const shared = await read('modules/forms/shared.js');
 add('modules/forms/shared.js', "import { escape as esc } from '../../lib/api.js';\n" + shared.slice(shared.indexOf('export function options')));
@@ -64,6 +71,8 @@ export function bindForms() {
     }
     const payment = form.elements.namedItem('payment_method');
     if (payment) payment.onchange = () => { root.querySelector('#bank-fields').hidden = payment.value !== 'collection'; };
+    const billingMode = form.elements.namedItem('billing_address_mode');
+    if (billingMode) billingMode.onchange = () => { root.querySelector('#billing-address-details').hidden = billingMode.value !== 'other'; };
   }
   for (const button of root.querySelectorAll('button')) {
     button.disabled = true;
