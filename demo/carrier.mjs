@@ -143,6 +143,32 @@ function profileDocument(files) {
   return {doc,p,october};
 }
 
+export function describeCarrier(bytes, filename='') {
+  const files=unpack(bytes), doc=parse(files[body]);
+  const paragraphs=all(doc,W,'p').map(p=>text(p).normalize('NFKC').trim());
+  const fn=filename.normalize('NFKC').replace(/\.docx$/i,'');
+  const title=paragraphs.slice(0,12).find(line=>line.includes('套餐申请登记表'))||'';
+  const bodyName=title.split('套餐申请登记表')[0].trim();
+  const filenameName=fn.match(/(?:\d+(?:\.\d+)?[MG]\s*)?([^】]+?)套餐申请登记表/i)?.[1]?.trim();
+  const speed=fn.match(/(\d+(?:\.\d+)?)\s*([MG])(?=\s*智云)/i);
+  const rateLines=paragraphs.slice(0,100).filter(line=>/[□■☐☑].*\d+\s*元\s*\//.test(line));
+  const speeds=[...new Set(rateLines.flatMap(line=>[...line.matchAll(/(\d+(?:\.\d+)?)\s*([MG])\s*\/\s*\d+(?:\.\d+)?\s*[MG]/gi)].map(m=>m[1]+m[2].toUpperCase())))];
+  const namedSpeed=speed?speed[1]+speed[2].toUpperCase():'';
+  const bandwidth=namedSpeed && speeds.length && !speeds.includes(namedSpeed)?'':namedSpeed || (speeds.length===1?speeds[0]:'');
+  const effective=fn.match(/(?:20\d{2})[.\-/]?\d{2}[.\-/]?\d{2}(?=起)/)?.[0];
+  const revision=title.match(/\((20\d{2}\/[A-Z0-9]+)\)\s*$/i)?.[1]||'';
+  const noVoice=/不带语音|无语音/.test(fn);
+  const voice=/带语音|含语音/.test(fn.replace(/不带语音|无语音/g,''));
+  const noDiscount=/不打折|无折扣|未打折/.test(fn);
+  const discount=/打折|折扣|\d+(?:\.\d+)?折/.test(fn.replace(/不打折|无折扣|未打折/g,''))||
+    rateLines.some(line=>/\d+(?:\.\d+)?\s*折|折后|折扣/.test(line));
+  return {bandwidth,name:bodyName||filenameName||'',revision:[effective,revision].filter(Boolean).join(' · '),
+    voice:noVoice===voice?'':voice?'带语音':'不带语音',discount:noDiscount===discount?'':discount?'打折':'不打折',
+    evidence:[title.slice(0,120), '文件名网速：'+namedSpeed,'资费区速率：'+speeds.join('、'),'版本：'+[effective,revision].filter(Boolean).join(' · '),
+      '语音证据：'+[voice?'带语音':'',noVoice?'不带语音':''].filter(Boolean).join('、'),
+      '折扣证据：'+[discount?'有折扣标记':'',noDiscount?'不打折':''].filter(Boolean).join('、')].join('\n')};
+}
+
 export function analyzeCarrier(bytes,variant) {
   const files = unpack(bytes), {doc,p,october} = profileDocument(files);
   const rateRows = [39,40].map(i=>Array.from(compact(p[i]).matchAll(/[□■☐☑]拨号(\d+M\/\d+M)\((\d+(?:\.\d{1,2})?)元\/(月|年|2年)\/线\)/g)));

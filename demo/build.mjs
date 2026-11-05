@@ -9,6 +9,8 @@ import { tariffs, sampleLabels, sampleMapping } from '../backend/modules/forms/p
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const output = resolve(process.argv[2] || resolve(root, 'dist/demo-interactive'));
+const aiEndpoint = process.env.DEMO_AI_ENDPOINT || '';
+if(aiEndpoint && !/^https:\/\/[a-z0-9.-]+\/template-ai$/i.test(aiEndpoint)) throw new Error('DEMO_AI_ENDPOINT 必须为 HTTPS /template-ai 地址。');
 const commit = process.env.GITHUB_SHA || execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
 if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error('无法确认当前提交，停止发布。');
 const require = createRequire(import.meta.url);
@@ -71,12 +73,13 @@ const demoPlugin = {
 export async function bundleDemo(entry = 'frontend/app.js') {
   const result = await build({ absWorkingDir: root, entryPoints: [entry], bundle: true, write: false,
     platform: 'browser', format: 'esm', target: 'es2022', legalComments: 'none', minify: true,
+    define:{ __DEMO_AI_ENDPOINT__:JSON.stringify(aiEndpoint) },
     loader: { '.wasm': 'binary' }, plugins: [demoPlugin] });
   return result.outputFiles[0].contents;
 }
 async function publishFiles() {
   const app = await bundleDemo();
-  const policy = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'";
+  const policy = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src "+(aiEndpoint||"'none'")+"; form-action 'none'; base-uri 'none'; object-src 'none'";
   const html = replace(await read('frontend/index.html'), '<meta charset="UTF-8">',
     '<meta charset="UTF-8">\n  <meta http-equiv="Content-Security-Policy" content="' + policy + '">')
     .replace('本地开发预览', '免登录演示版 · ' + commit.slice(0, 7));

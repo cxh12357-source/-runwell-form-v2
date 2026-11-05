@@ -126,6 +126,28 @@ function bindSmartImport(root) {
   const section=drop.closest('.smart-import'), feedback=root.querySelector('#smart-status');
   const tell=message=>{feedback.textContent=message;};
   let epoch=0;
+  const aiEndpoint=typeof __DEMO_AI_ENDPOINT__==='string'?__DEMO_AI_ENDPOINT__:'';
+  function appendAi(metadata, ticket) {
+    if(!aiEndpoint)return;
+    preview.insertAdjacentHTML('beforeend','<form class="template-ai"><label>AI 验收口令<input name="access" type="password" autocomplete="off" required></label><p class="hint">只发送套餐摘要，不发送 Word 文件或客户填写区。AI 结果供核对。</p><button class="button">AI 实时解析</button><p aria-live="polite"></p></form>');
+    const ai=preview.querySelector('.template-ai');
+    ai.onsubmit=async event=>{
+      event.preventDefault();
+      const button=ai.querySelector('button'), output=ai.querySelector('[aria-live]');
+      button.disabled=true;output.textContent='正在请求 AI…';
+      const access=ai.elements.access.value.trim();ai.elements.access.value='';
+      try {
+        const response=await fetch(aiEndpoint,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+access},
+          body:JSON.stringify({evidence:metadata.evidence}),signal:AbortSignal.timeout(20000),credentials:'omit',redirect:'error'});
+        const body=await response.json();
+        if(!response.ok)throw new Error(body.error||'AI 解析失败。');
+        if(ticket!==epoch || !root.isConnected)return;
+        output.textContent='AI 建议：'+[['网速','bandwidth'],['套餐名','name'],['版本','revision'],['语音','voice'],['折扣','discount']]
+          .map(([label,key])=>label+'：'+(body.data[key]||'待确认')).join('；');
+      } catch(error){output.textContent=error.message;}
+      finally{button.disabled=false;}
+    };
+  }
   async function inspect(files) {
     const ticket=++epoch;
     preview.replaceChildren();
@@ -136,8 +158,16 @@ function bindSmartImport(root) {
     tell('已收到「'+files[0].name+'」，正在解析 Word…');
     try {
       const file=await readFile(files[0]);
-      const result=await request('/templates/inspect',{method:'POST',data:{file}});
+      const result=await request('/templates/inspect',{method:'POST',data:{file,filename}});
       if(ticket!==epoch || !root.isConnected)return;
+      const fields=[['bandwidth','网速'],['name','套餐名'],['revision','版本'],['voice','语音'],['discount','折扣']];
+      const summary='<dl>'+fields.map(([key,label])=>'<dt>'+label+'</dt><dd>'+esc(result.metadata[key]||'待确认')+'</dd>').join('')+'</dl>';
+      if(!result.convertible){
+        tell('已读取套餐资料。此 Word 暂不能自动转换。');
+        preview.innerHTML=summary+'<p>'+esc(result.conversionMessage)+'</p>';
+        appendAi(result.metadata,ticket);
+        return;
+      }
       const standard=/不打折|无折扣|未打折/.test(filename);
       const discount=/打折|折扣|\d+(?:\.\d+)?折/.test(filename.replace(/不打折|无折扣|未打折/g,''));
       const conflict=(standard && (result.discountNote || discount));
@@ -147,19 +177,20 @@ function bindSmartImport(root) {
       tell(!confirmVariant?'解析成功。员工生成表单时按客户需求选择资费。':
         conflict?'基础套餐备注或文件名中的折扣信息有冲突，请核对后选择。':
         suggested?'已按'+basis+'预选模板类型，请核对后导入。':'未找到明确的折扣标记，请确认模板类型。');
-      preview.innerHTML='<p>识别到：<strong>'+esc(result.name)+'</strong> · 商务专线／不带语音／新装</p>'+
+      preview.innerHTML=summary+'<p>识别到：<strong>'+esc(result.name)+'</strong> · 商务专线／不带语音／新装</p>'+
         '<p>已定位 '+Number(result.tags.length)+' 个占位符，所有方框默认留空。</p><ul>'+
         result.rates.map(r=>'<li>'+esc(r.bandwidth+' · '+r.amount+' 元/'+r.cycle+'/线')+'</li>').join('')+
         '</ul><form id="smart-confirm">'+(confirmVariant?
           '<label>确认模板类型<select name="variant" required><option value="">请选择打折或不打折</option><option value="discount">100M 打折、不带语音</option><option value="standard">100M 不打折、不带语音</option></select></label>':'')+
         '<button class="button">导入模板</button></form>';
       const confirm=preview.querySelector('form');
+      appendAi(result.metadata,ticket);
       if(confirm.elements.variant)confirm.elements.variant.value=suggested;
       confirm.onsubmit=async event=>{
         event.preventDefault();
         const button=confirm.querySelector('button');button.disabled=true;picker.disabled=true;
         try {
-          const saved=await request('/templates/import',{method:'POST',data:{file,variant:confirm.elements.variant?.value}});
+          const saved=await request('/templates/import',{method:'POST',data:{file,filename,variant:confirm.elements.variant?.value}});
           if(root.isConnected){
             const notice=saved.duplicate?'该版式模板已导入，未重复新增。':'已录入一份模板。启用后，员工可在生成表单时选择资费。';
             sessionStorage.setItem('runwell-smart-import-notice',notice);
