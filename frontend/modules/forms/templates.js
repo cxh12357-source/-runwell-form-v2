@@ -16,13 +16,13 @@ export function templatesView({ rows, workspace, hosted }) {
     '<p class="hint">可下载样表核对占位符。新上传的版本需要手动启用。</p><div class="table-wrap"><table><thead><tr><th>套餐</th><th>模板</th><th>版本</th><th>状态</th><th>操作</th></tr></thead><tbody id="template-rows">' +
     rows.map(t => { const tariff=workspace.tariffs.find(a => a.id === t.tariff_id); return '<tr data-tariff="' + esc(t.tariff_id) + '"><td>' + esc(tariff?.name) +
       (tariff?.carrier_profile ? '<br>'+esc(tariff.bandwidth+' · '+tariff.amount+' 元/'+tariff.cycle+'/线') : '') +
-      '</td><td>' + esc(t.name) + '</td><td>' + esc(t.revision) + '</td><td>' + (t.active ? '已启用' : '已停用') + '</td><td>' +
+      '</td><td>' + esc(t.name) + '</td><td>' + esc(t.revision) + '</td><td data-template-state aria-live="polite">' + (t.active ? '已启用' : '已停用') + '</td><td>' +
       '<button type="button" data-active="' + String(!t.active) + '" data-id="' + esc(t.id) + '">' + (t.active ? '停用' : '启用') +
       '</button> ' + downloadControl('/templates/' + t.id + '/file', '下载模板', hosted) +
-      (t.deletable ? ' <button type="button" data-delete-open>删除</button><div class="template-delete-confirm" hidden>' +
+      (t.custom ? ' <span data-delete-tools'+(t.active?' hidden':'')+'><button type="button" data-delete-open>删除</button></span><div class="template-delete-confirm" hidden>' +
       '<p>删除「'+esc(t.name)+'」版本 '+esc(t.revision)+'？已生成的 Word 仍可从历史记录下载。</p>' +
       '<button type="button" data-delete-cancel>取消</button> <button type="button" data-delete-confirm="'+esc(t.id)+'">确认删除</button></div>' : '') +
-      '<details><summary>查看映射</summary><pre>' + esc(JSON.stringify(t.mapping, null, 2)) + '</pre></details></td></tr>'; }).join('') + '</tbody></table></div>';
+      '<details><summary>查看映射</summary><pre>' + esc(JSON.stringify(t.mapping, null, 2)) + '</pre></details><div data-template-error aria-live="polite"></div></td></tr>'; }).join('') + '</tbody></table></div>';
 }
 function readFile(file) {
   return new Promise((resolve, reject) => {
@@ -36,8 +36,6 @@ export function bindTemplates(root, state) {
   const form = root.querySelector('#template-form');
   const selection = bindClassification(form, { ...state, workspace: { ...state.workspace, tariffs: state.workspace.tariffs.filter(t=>!t.carrier_profile) } });
   if(state.workspace.smart_import) bindSmartImport(root);
-  const deleteNotice=sessionStorage.getItem('runwell-template-delete-notice');
-  if(deleteNotice){sessionStorage.removeItem('runwell-template-delete-notice');status(root,deleteNotice);}
   form.onchange = () => {
     const { biz, ver, attr, tariff } = form.elements;
     const selected = { business_id: biz.value, business_version_id: ver.value, business_attribute: attr.value, id: tariff.value };
@@ -62,26 +60,45 @@ export function bindTemplates(root, state) {
     } catch (error) { status(root, error.message); } finally { submit.disabled = false; }
   };
   root.querySelector('#template-rows').onclick = async event => {
-    const remove=event.target.closest('button[data-delete-open], button[data-delete-cancel], button[data-delete-confirm]');
-    if(remove){
-      const row=remove.closest('tr'), panel=row.querySelector('.template-delete-confirm'), opener=row.querySelector('[data-delete-open]');
-      const confirm=panel.querySelector('[data-delete-confirm]'), cancel=panel.querySelector('[data-delete-cancel]');
-      if(remove===opener){panel.hidden=false; opener.hidden=true; cancel.focus(); return;}
-      if(remove===cancel){panel.hidden=true; opener.hidden=false; opener.focus(); return;}
-      confirm.disabled=cancel.disabled=true;
-      try {
-        await request('/templates/'+confirm.dataset.deleteConfirm,{method:'DELETE'});
-        if(root.isConnected){sessionStorage.setItem('runwell-template-delete-notice','模板已删除，历史 Word 文件仍可下载。');refresh();}
-      } catch(error){status(root,error.message);confirm.disabled=cancel.disabled=false;}
-      return;
-    }
-    const button = event.target.closest('button[data-active]');
-    if (!button) return;
-    button.disabled = true;
+    const action = event.target.closest('button[data-active], button[data-delete-open], button[data-delete-cancel], button[data-delete-confirm]');
+    if (!action) return;
+    const row = action.closest('tr');
+    const toggle = row.querySelector('[data-active]');
+    if (toggle.disabled) return;
+    const tools = row.querySelector('[data-delete-tools]');
+    const opener = row.querySelector('[data-delete-open]');
+    const panel = row.querySelector('.template-delete-confirm');
+    const cancel = row.querySelector('[data-delete-cancel]');
+    const errorMessage = row.querySelector('[data-template-error]');
+    const focusHere = element => element.focus({ preventScroll: true });
+    if (action === opener) { panel.hidden = false; opener.hidden = true; focusHere(cancel); return; }
+    if (action === cancel) { panel.hidden = true; opener.hidden = false; focusHere(opener); return; }
+    errorMessage.textContent = '';
+    const hadFocus = document.activeElement === action;
+    toggle.disabled = action.disabled = true;
     try {
-      await request('/templates/' + button.dataset.id, { method: 'PATCH', data: { active: button.dataset.active === 'true' } });
-      if (root.isConnected) refresh();
-    } catch (error) { status(root, error.message); } finally { button.disabled = false; }
+      if (action === toggle) {
+        const { active } = await request('/templates/' + toggle.dataset.id, { method: 'PATCH', data: { active: toggle.dataset.active === 'true' } });
+        row.querySelector('[data-template-state]').textContent = active ? '已启用' : '已停用';
+        toggle.textContent = active ? '停用' : '启用';
+        toggle.dataset.active = String(!active);
+        if (tools) { tools.hidden = active; panel.hidden = true; opener.hidden = false; }
+      } else {
+        await request('/templates/' + action.dataset.deleteConfirm, { method: 'DELETE' });
+        if (!row.isConnected) return;
+        const visibleRows = [...row.parentElement.rows].filter(item => !item.hidden);
+        const index = visibleRows.indexOf(row);
+        const nearby = (visibleRows[index + 1] || visibleRows[index - 1])?.querySelector('[data-active]');
+        row.remove();
+        if (hadFocus && document.activeElement === document.body && nearby) focusHere(nearby);
+        status(root, '模板已删除，历史 Word 文件仍可下载。');
+      }
+    } catch (error) {
+      errorMessage.textContent = error.message;
+    } finally {
+      toggle.disabled = action.disabled = false;
+      if (hadFocus && action.isConnected && document.activeElement === document.body) focusHere(action);
+    }
   };
 }
 

@@ -25,7 +25,7 @@ async function body(req) {
 }
 function unpack(t){return {...t,active:Boolean(t.active),mapping:JSON.parse(t.mapping)};}
 async function templates(db,tenant,showDelete=false) {
-  const fields=showDelete?', (object_key IS NOT NULL AND active=0) AS deletable':'';
+  const fields=showDelete?', (object_key IS NOT NULL) AS custom':'';
   const rows=await db.prepare('SELECT id,tariff_id,name,revision,active,mapping'+fields+' FROM qa_templates WHERE tenant=? ORDER BY id').bind(tenant).all();
   return rows.results.map(unpack);
 }

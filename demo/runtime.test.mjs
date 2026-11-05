@@ -52,7 +52,7 @@ test('免登录运行：拒绝缺项、生成 Word、刷新后下载、上传及
   const added = await result(call('/templates', 'POST', { name: name + '本机样表', revision: 'test-2', tariff_id: id,
     mapping: templates.find(t => t.id === sampleId).mapping, file: Buffer.from(await templateFile.arrayBuffer()).toString('base64') }), 201);
   assert.equal(added.active, false);
-  assert.ok((await result(call('/templates'))).find(t => t.id === added.id).deletable);
+  assert.ok((await result(call('/templates'))).find(t => t.id === added.id).custom);
   assert.equal((await call('/templates/' + sampleId, 'DELETE')).status, 403);
   await result(call('/templates/' + added.id, 'PATCH', { active: true }));
   assert.equal((await call('/templates/' + added.id, 'DELETE')).status, 409);
