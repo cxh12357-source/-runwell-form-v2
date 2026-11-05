@@ -49,6 +49,7 @@
 
 免登录 Demo 在浏览器内运行。`GET /forms/templates` 的 `custom` 标识自定义模板；管理员可对启用或停用的自定义模板调用 `DELETE /forms/templates/{id}`，内置样表禁止删除。删除不影响历史文件。
 Demo 管理员可调用 `DELETE /forms/templates/samples` 批量清除当前浏览器的内置样表并停止自动创建。
+Demo 模板列表返回 `imported_at`（UTC ISO 8601）；已有模板没有录入时间时为 `null`。
 
 ## 客户资料收集与虚构工商验收
 

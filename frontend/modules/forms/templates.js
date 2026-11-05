@@ -15,13 +15,15 @@ export function templatesView({ rows, workspace, hosted }) {
     '</textarea></details><button class="button">上传新版本</button></form><div class="divider"></div><h3>模板目录</h3>' +
     '<p class="hint">可下载样表核对占位符。新上传的版本需要手动启用。</p>' +
     (workspace.smart_import && rows.some(t=>!t.custom) ? '<button id="remove-samples" type="button">清除内置测试套餐</button><div id="remove-samples-confirm" hidden><p>清除当前浏览器的内置样表？自定义模板和历史 Word 会保留。</p><button type="button" data-cancel>取消</button> <button type="button" data-confirm>确认清除</button></div>' : '') +
-    '<div class="table-wrap"><table><thead><tr><th>套餐</th><th>模板</th><th>版本</th><th>状态</th><th>操作</th></tr></thead><tbody id="template-rows">' +
+    '<div class="table-wrap"><table><thead><tr><th>套餐</th><th>模板</th><th>版本</th>'+(workspace.smart_import?'<th>录入时间</th>':'')+'<th>状态</th><th>操作</th></tr></thead><tbody id="template-rows">' +
     rows.map(t => {
       const tariff=workspace.tariffs.find(a=>a.template_id===t.id) || workspace.tariffs.find(a => a.id === t.tariff_id);
       const packageName=tariff?.carrier_profile?.startsWith('fttr-b-shanghai-2026-')
         ? '100M 智云上海专线基础版（不带语音、不打折）' : tariff?.name;
       return '<tr data-tariff="' + esc(tariff?.id) + '"><td>' + esc(packageName) +
-      '</td><td>' + esc(t.name) + '</td><td>' + esc(t.revision) + '</td><td data-template-state aria-live="polite">' + (t.active ? '已启用' : '已停用') + '</td><td>' +
+      '</td><td>' + esc(t.name) + '</td><td>' + esc(t.revision) + '</td>' +
+      (workspace.smart_import ? '<td>'+(t.imported_at ? esc(new Date(t.imported_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})) : '未记录')+'</td>' : '') +
+      '<td data-template-state aria-live="polite">' + (t.active ? '已启用' : '已停用') + '</td><td>' +
       '<button type="button" data-active="' + String(!t.active) + '" data-id="' + esc(t.id) + '">' + (t.active ? '停用' : '启用') +
       '</button> ' + downloadControl('/templates/' + t.id + '/file', '下载模板', hosted) +
       (t.custom ? ' <button type="button" data-delete-open>删除</button><div class="template-delete-confirm" hidden>' +

@@ -72,6 +72,9 @@ export async function localFetch(path, options = {}) {
         const saved = await snapshot(db);
         sql = new SQL.Database(saved?.sql);
         sql.run(schema);
+        if (!sql.exec('PRAGMA table_info(qa_templates)')[0].values.some(column => column[1] === 'imported_at')) {
+          sql.run('ALTER TABLE qa_templates ADD COLUMN imported_at TEXT');
+        }
         const files = new Map(saved?.files);
         const bucket = {
           get: key => files.has(key) ? new Blob([files.get(key)]) : null,

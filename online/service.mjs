@@ -25,7 +25,7 @@ async function body(req) {
 }
 function unpack(t){return {...t,active:Boolean(t.active),mapping:JSON.parse(t.mapping)};}
 async function templates(db,tenant,showDelete=false) {
-  const fields=showDelete?', (object_key IS NOT NULL) AS custom':'';
+  const fields=showDelete?', (object_key IS NOT NULL) AS custom, imported_at':'';
   const rows=await db.prepare('SELECT id,tariff_id,name,revision,active,mapping'+fields+' FROM qa_templates WHERE tenant=? ORDER BY id').bind(tenant).all();
   return rows.results.map(unpack);
 }
@@ -77,7 +77,7 @@ async function startSession(req,db,tenant,plugin) {
   response.headers.set('Set-Cookie','__Secure-rw-download='+token+'; Path=/api/v1/forms/; Secure; HttpOnly; SameSite=Strict; Max-Age=28800');
   return response;
 }
-async function upload(data,db,bucket,tenant) {
+async function upload(data,db,bucket,tenant,plugin) {
   const {name,revision,tariff_id,file}=data, id=crypto.randomUUID();
   insist(tariffs.some(t=>t.id===tariff_id),'请选择可用套餐。');
   for(const v of [name,revision])insist(typeof v==='string' && v.trim() && v.length<=80 && !/[\x00-\x1f]/.test(v),'请填写模板名称和版本号。');
@@ -88,8 +88,9 @@ async function upload(data,db,bucket,tenant) {
   const cleaned=renderWord(bytes,mapping);
   const key='templates/'+tenant+'/'+id;
   await bucket.put(key,cleaned);
-  const result=await db.prepare('INSERT INTO qa_templates(tenant,id,tariff_id,name,revision,active,mapping,object_key) VALUES(?,?,?,?,?,0,?,?) ON CONFLICT DO NOTHING')
-    .bind(tenant,id,tariff_id,name.trim(),revision.trim(),JSON.stringify(mapping),key).run();
+  const result=await db.prepare('INSERT INTO qa_templates(tenant,id,tariff_id,name,revision,active,mapping,object_key'+(plugin?',imported_at':'')+
+    ') VALUES(?,?,?,?,?,0,?,?'+(plugin?',?':'')+') ON CONFLICT DO NOTHING')
+    .bind(tenant,id,tariff_id,name.trim(),revision.trim(),JSON.stringify(mapping),key,...(plugin?[new Date().toISOString()]:[])).run();
   if(!resultChanges(result)){await bucket.delete(key);throw new FormError('相同套餐下已有此模板版本。',409);}
   return json({id,active:false},201);
 }
@@ -174,8 +175,8 @@ async function importCarrier(data,db,bucket,tenant,plugin,save) {
   try {
     await db.batch([
       ...await carrierRates(db,tenant,info,id),
-      db.prepare('INSERT INTO qa_templates(tenant,id,tariff_id,name,revision,active,mapping,object_key) VALUES(?,?,?,?,?,0,?,?)')
-        .bind(tenant,id,id,name+' 申请登记表',revision,JSON.stringify(Object.fromEntries(tags.map(tag=>[tag,tag]))),key)
+      db.prepare('INSERT INTO qa_templates(tenant,id,tariff_id,name,revision,active,mapping,object_key,imported_at) VALUES(?,?,?,?,?,0,?,?,?)')
+        .bind(tenant,id,id,name+' 申请登记表',revision,JSON.stringify(Object.fromEntries(tags.map(tag=>[tag,tag]))),key,new Date().toISOString())
     ]);
   } catch(error){await bucket.delete(key);throw error;}
   return json({id,duplicate:false},201);
@@ -232,7 +233,7 @@ export async function handleForms(req,env) {
       if(plugin && method==='POST' && ['/forms/templates/inspect','/forms/templates/import'].includes(path))
         return await importCarrier(await body(req),db,bucket,tenant,plugin,path.endsWith('/import'));
       if(path==='/forms/templates' && method==='GET')return list(await templates(db,tenant,Boolean(plugin)));
-      if(path==='/forms/templates' && method==='POST')return await upload(await body(req),db,bucket,tenant);
+      if(path==='/forms/templates' && method==='POST')return await upload(await body(req),db,bucket,tenant,plugin);
       const item=/^\/forms\/templates\/([\w-]+)(\/file)?$/.exec(path);
       if(plugin && item && !item[2] && method==='DELETE'){
         const id=item[1];
