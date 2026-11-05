@@ -23,6 +23,7 @@ add('index.html', (await read('index.html')).replace('href="/styles.css"', 'href
 add('styles.css', await read('styles.css') + '\n.demo-banner{margin:0 0 24px}.demo-banner p+p{margin-top:6px}#bank-fields[hidden]{display:none}button:disabled{cursor:not-allowed;opacity:.65}input[type=file]{height:auto}textarea:disabled{color:#64778b;background:#f6f8fb}td{padding:20px 14px}pre{white-space:pre-wrap;max-width:480px}.demo-version{color:#7a899b;font-size:12px;margin-top:28px}\n');
 files.find(f => f.path === 'styles.css').content += '.required-mark{color:#b42318;font-weight:700;margin-inline-end:.35em}.customer-wide{grid-column:span 2}#billing-address-details[hidden]{display:none}@media(max-width:680px){.customer-wide{grid-column:auto}}\n';
 add('modules/home.js', (await read('modules/home.js')).replace('当前先搭建表单生成、历史记录和套餐模板管理。', '表单生成、历史记录和套餐模板管理已接入新版展示界面。'));
+add('modules/settings.js', `export const renderSettings = () => '<h1>设置</h1><p>当前展示版不提供接口设置。</p>';\nexport const bindSettings = () => {};\n`);
 add('lib/api.js', (await read('lib/api.js')).split('export async function get')[0]);
 // Pre-render read-only forms at build time. The published modules contain markup only.
 const state = {
