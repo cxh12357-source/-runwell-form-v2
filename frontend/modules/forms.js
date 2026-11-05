@@ -15,7 +15,7 @@ function selector(catalog) {
 }
 export async function renderForms(path) {
   const { data: mode } = await get('/forms/mode');
-  if (mode.preview) return renderPreview(path, tabs);
+  if (mode.preview) return renderPreview(path, tabs, mode.hosted === true);
   const [{ data: catalog }, resource] = await Promise.all([
     get('/catalog'),
     path === '/forms/history' ? get('/forms/records') : path === '/forms/templates' ? get('/forms/templates') : Promise.resolve(null)
