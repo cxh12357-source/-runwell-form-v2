@@ -32,7 +32,9 @@ async function templates(db,tenant,showDelete=false) {
 async function directory(db,tenant,plugin){
   if(!plugin)return tariffs;
   const rows=await db.prepare('SELECT data FROM demo_tariffs WHERE tenant=? ORDER BY id').bind(tenant).all();
-  return [...tariffs,...rows.results.map(row=>JSON.parse(row.data))];
+  const hidden=await db.prepare('SELECT hide_samples FROM demo_settings WHERE tenant=?').bind(tenant).first();
+  const custom=hidden && await db.prepare('SELECT DISTINCT tariff_id FROM qa_templates WHERE tenant=? AND object_key IS NOT NULL').bind(tenant).all();
+  return [...tariffs.filter(t=>!hidden || custom.results.some(r=>r.tariff_id===t.id)),...rows.results.map(row=>JSON.parse(row.data))];
 }
 async function candidates(selection,db,tenant,plugin){
   insist(isObject(selection),'请选择业务和套餐。');
@@ -54,7 +56,7 @@ async function bytesFor(bucket,key,tariffId){
   const obj=await bucket.get(key);if(!obj)throw new Error('Missing document object');
   return new Uint8Array(await obj.arrayBuffer());
 }
-async function startSession(req,db,tenant) {
+async function startSession(req,db,tenant,plugin) {
   const {account}=await body(req);
   insist(typeof account==='string' && Object.hasOwn(accounts,account),'请选择有效验收身份。');
   const token=crypto.randomUUID()+crypto.randomUUID();
@@ -62,7 +64,8 @@ async function startSession(req,db,tenant) {
     db.prepare('DELETE FROM qa_sessions WHERE tenant=? AND expires<=?').bind(tenant,now),
     db.prepare('INSERT INTO qa_sessions(hash,tenant,actor,expires) VALUES(?,?,?,?)').bind(await signature(token),tenant,account,now+8*60*60*1000)
   ];
-  for(const t of tariffs){
+  const hidden=plugin && await db.prepare('SELECT hide_samples FROM demo_settings WHERE tenant=?').bind(tenant).first();
+  for(const t of hidden?[]:tariffs){
     statements.push(db.prepare('INSERT OR IGNORE INTO qa_templates(tenant,id,tariff_id,name,revision,active,mapping) VALUES(?,?,?,?,?,1,?)')
       .bind(tenant,t.id+'-sample',t.id,t.name+' 新装样表','demo-1',JSON.stringify(sampleMapping(t))));
   }
@@ -165,7 +168,7 @@ export async function handleForms(req,env) {
     if(path==='/catalog' && method==='GET')return json({...catalog,versions:[...catalog.versions,version,voiceVersion]});
     insist(env.DB && env.BUCKET,'验收存储尚未就绪。',503);
     const db=env.DB, bucket=env.BUCKET, plugin=env.DEMO_IMPORT;
-    if(path==='/forms/test-session' && method==='POST')return await startSession(req,db,tenant);
+    if(path==='/forms/test-session' && method==='POST')return await startSession(req,db,tenant,plugin);
     let auth=req.headers.get('Authorization')||'';
     if (!auth && method==='GET' && /^\/forms\/(records|templates)\/[\w-]+\/file$/.test(path)) {
       const cookie=(req.headers.get('Cookie')||'').split(';').map(v=>v.trim()).find(v=>v.startsWith('__Secure-rw-download='));
@@ -190,6 +193,13 @@ export async function handleForms(req,env) {
     }
     if(path==='/forms/templates'||path.startsWith('/forms/templates/')){
       insist(accounts[actor].role==='admin','仅模板管理员可执行此操作。',403);
+      if(plugin && path==='/forms/templates/samples' && method==='DELETE'){
+        await db.batch([
+          db.prepare('INSERT OR IGNORE INTO demo_settings(tenant,hide_samples) VALUES(?,1)').bind(tenant),
+          db.prepare('DELETE FROM qa_templates WHERE tenant=? AND object_key IS NULL').bind(tenant)
+        ]);
+        return json({removed:true});
+      }
       if(plugin && method==='POST' && ['/forms/templates/inspect','/forms/templates/import'].includes(path))
         return await importCarrier(await body(req),db,bucket,tenant,plugin,path.endsWith('/import'));
       if(path==='/forms/templates' && method==='GET')return list(await templates(db,tenant,Boolean(plugin)));

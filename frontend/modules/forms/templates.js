@@ -13,7 +13,9 @@ export function templatesView({ rows, workspace, hosted }) {
     '<details><summary>字段映射</summary><p>左侧是 Word 中双花括号内的占位符，右侧是资料字段。其他必填资料可用 extra_ 开头的字段名。</p>' +
     '<textarea name="mapping" aria-label="字段映射 JSON" rows="14" required style="width:100%;box-sizing:border-box">' + esc(JSON.stringify(mapping, null, 2)) +
     '</textarea></details><button class="button">上传新版本</button></form><div class="divider"></div><h3>模板目录</h3>' +
-    '<p class="hint">可下载样表核对占位符。新上传的版本需要手动启用。</p><div class="table-wrap"><table><thead><tr><th>套餐</th><th>模板</th><th>版本</th><th>状态</th><th>操作</th></tr></thead><tbody id="template-rows">' +
+    '<p class="hint">可下载样表核对占位符。新上传的版本需要手动启用。</p>' +
+    (workspace.smart_import && rows.some(t=>!t.custom) ? '<button id="remove-samples" type="button">清除内置测试套餐</button><div id="remove-samples-confirm" hidden><p>清除当前浏览器的内置样表？自定义模板和历史 Word 会保留。</p><button type="button" data-cancel>取消</button> <button type="button" data-confirm>确认清除</button></div>' : '') +
+    '<div class="table-wrap"><table><thead><tr><th>套餐</th><th>模板</th><th>版本</th><th>状态</th><th>操作</th></tr></thead><tbody id="template-rows">' +
     rows.map(t => { const tariff=workspace.tariffs.find(a => a.id === t.tariff_id); return '<tr data-tariff="' + esc(t.tariff_id) + '"><td>' + esc(tariff?.name) +
       (tariff?.carrier_profile ? '<br>'+esc(tariff.bandwidth+' · '+tariff.amount+' 元/'+tariff.cycle+'/线') : '') +
       '</td><td>' + esc(t.name) + '</td><td>' + esc(t.revision) + '</td><td data-template-state aria-live="polite">' + (t.active ? '已启用' : '已停用') + '</td><td>' +
@@ -36,6 +38,19 @@ export function bindTemplates(root, state) {
   const form = root.querySelector('#template-form');
   const selection = bindClassification(form, { ...state, workspace: { ...state.workspace, tariffs: state.workspace.tariffs.filter(t=>!t.carrier_profile) } });
   if(state.workspace.smart_import) bindSmartImport(root);
+  const clearSamples=root.querySelector('#remove-samples');
+  if(clearSamples){
+    const panel=root.querySelector('#remove-samples-confirm');
+    clearSamples.onclick=()=>{panel.hidden=false;};
+    panel.querySelector('[data-cancel]').onclick=()=>{panel.hidden=true;};
+    const confirm=panel.querySelector('[data-confirm]');
+    confirm.onclick=async()=>{
+      confirm.disabled=true;
+      try{await request('/templates/samples',{method:'DELETE'});if(root.isConnected)refresh();}
+      catch(error){status(root,error.message);}
+      finally{confirm.disabled=false;}
+    };
+  }
   form.onchange = () => {
     const { biz, ver, attr, tariff } = form.elements;
     const selected = { business_id: biz.value, business_version_id: ver.value, business_attribute: attr.value, id: tariff.value };

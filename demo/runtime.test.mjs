@@ -71,6 +71,11 @@ test('免登录运行：拒绝缺项、生成 Word、刷新后下载、上传及
   assert.equal((await call('/templates/' + added.id + '/file')).status, 404);
   assert.equal((await call('/records/' + customRecord.id + '/file')).status, 200);
   assert.ok((await result(call('/workspace'))).tariffs.some(t => t.id === id));
+  await result(call('/templates/samples', 'DELETE'));
+  ({ localFetch } = await import(source + '#samples-cleared'));
+  assert.deepEqual(await result(call('/templates')), []);
+  assert.deepEqual((await result(call('/workspace'))).tariffs, []);
+  assert.equal((await call('/records/' + customRecord.id + '/file')).status, 200);
   globalThis.indexedDB = new IDBFactory();
   assert.deepEqual(await result(call('/records')), []);
   assert.equal((await result(call('/templates'))).some(t => t.id === added.id), false);
