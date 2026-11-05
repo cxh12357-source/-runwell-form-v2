@@ -5,8 +5,9 @@ export function templatesView({ rows, workspace, hosted }) {
   const mapping = Object.fromEntries(Object.keys(workspace.labels).map(key => [key, key]));
   const smart = workspace.smart_import ? '<section class="smart-import" aria-labelledby="smart-title"><h3 id="smart-title">智能导入 Word</h3>' +
     '<p>支持智云上海专线基础版（FTTR-B）2026/A 不带语音。演示请使用虚构资料。</p>' +
-    '<div id="smart-drop"><label for="smart-file">拖入 Word 表单，或点击选择文件</label> <input id="smart-file" type="file" accept=".docx"></div>' +
-    '<div id="smart-preview" aria-live="polite"></div></section><div class="divider"></div>' : '';
+    '<div id="smart-drop"><label for="smart-file">把 .docx 文件拖到虚线框内</label><input id="smart-file" type="file" accept=".docx"></div>' +
+    '<p class="hint">拖拽没有反应时，可点击「选择文件」，两种方式使用相同的解析流程。</p>' +
+    '<p id="smart-status" role="status"></p><div id="smart-preview" aria-live="polite"></div></section><div class="divider"></div><h3>手动上传模板</h3>' : '';
   return smart + '<form id="template-form">' + selectors() + '<div class="field-grid"><label>模板名称<input name="name" required maxlength="80"></label>' +
     '<label>版本号<input name="revision" required maxlength="80"></label><label>Word 模板（.docx）<input name="file" type="file" accept=".docx" required></label></div>' +
     '<details><summary>字段映射</summary><p>左侧是 Word 中双花括号内的占位符，右侧是资料字段。其他必填资料可用 extra_ 开头的字段名。</p>' +
@@ -68,19 +69,21 @@ export function bindTemplates(root, state) {
 
 function bindSmartImport(root) {
   const drop=root.querySelector('#smart-drop'), picker=root.querySelector('#smart-file'), preview=root.querySelector('#smart-preview');
+  const section=drop.closest('.smart-import'), feedback=root.querySelector('#smart-status');
+  const tell=message=>{feedback.textContent=message;};
   let epoch=0;
   async function inspect(files) {
     const ticket=++epoch;
     preview.replaceChildren();
     if(files.length!==1 || !/\.docx$/i.test(files[0].name) || !files[0].size || files[0].size>524288){
-      status(root,'请一次选择一份 512 KiB 以内的 DOCX。'); return;
+      tell('请一次选择一份 512 KiB 以内的 DOCX。'); return;
     }
-    status(root,'正在解析 Word…');
+    tell('已收到「'+files[0].name+'」，正在解析 Word…');
     try {
       const file=await readFile(files[0]);
       const result=await request('/templates/inspect',{method:'POST',data:{file}});
       if(ticket!==epoch || !root.isConnected)return;
-      status(root,'');
+      tell('解析成功，请确认基础资费。');
       preview.innerHTML='<p>识别到：<strong>'+esc(result.name)+'</strong> · 商务专线／不带语音／新装</p>'+
         '<p>已定位 '+Number(result.tags.length)+' 个占位符，所有方框默认留空。</p><form id="smart-confirm"><label>确认基础资费<select name="rate" required>'+
         '<option value="">请选择客户适用的套餐资费</option>'+result.rates.map(r=>'<option value="'+esc(r.key)+'">'+esc(r.bandwidth+' · '+r.amount+' 元/'+r.cycle+'/线')+'</option>').join('')+
@@ -96,15 +99,34 @@ function bindSmartImport(root) {
             sessionStorage.setItem('runwell-smart-import-notice',notice);
             refresh();
           }
-        } catch(error){status(root,error.message);}
+        } catch(error){tell(error.message);}
         finally{button.disabled=false;picker.disabled=false;}
       };
-    } catch(error){if(ticket===epoch && root.isConnected)status(root,error.message);}
+    } catch(error){if(ticket===epoch && root.isConnected)tell(error.message);}
   }
   const notice=sessionStorage.getItem('runwell-smart-import-notice');
-  if(notice){sessionStorage.removeItem('runwell-smart-import-notice');status(root,notice);}
+  if(notice){sessionStorage.removeItem('runwell-smart-import-notice');tell(notice);}
   picker.onchange=()=>{const files=Array.from(picker.files);picker.value='';inspect(files);};
-  drop.ondragover=event=>{event.preventDefault();if(!picker.disabled)drop.classList.add('drag-active');};
-  drop.ondragleave=()=>drop.classList.remove('drag-active');
-  drop.ondrop=event=>{event.preventDefault();drop.classList.remove('drag-active');if(!picker.disabled)inspect(Array.from(event.dataTransfer.files));};
+  const acceptDrag=event=>{
+    if(!event.dataTransfer || !Array.from(event.dataTransfer.types).includes('Files'))return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect=picker.disabled?'none':'copy';
+    if(!picker.disabled)drop.classList.add('drag-active');
+  };
+  section.addEventListener('dragenter',acceptDrag,true);
+  section.addEventListener('dragover',acceptDrag,true);
+  section.addEventListener('dragleave',event=>{
+    if(!event.relatedTarget || !section.contains(event.relatedTarget))drop.classList.remove('drag-active');
+  });
+  section.addEventListener('drop',event=>{
+    event.preventDefault();
+    drop.classList.remove('drag-active');
+    if(picker.disabled){tell('正在保存模板，请稍候。');return;}
+    const transfer=event.dataTransfer;
+    const files=Array.from(transfer?.files||[]);
+    if(!files.length)files.push(...Array.from(transfer?.items||[])
+      .filter(item=>item.kind==='file').map(item=>item.getAsFile()).filter(Boolean));
+    if(files.length)inspect(files);
+    else tell('没有收到文件。请从文件资源管理器拖入 .docx，或点击「选择文件」。');
+  },true);
 }
