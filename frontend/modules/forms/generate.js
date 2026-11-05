@@ -1,5 +1,5 @@
 import { escape as esc } from '../../lib/api.js';
-import { bindClassification, options, request, selectors, status } from './shared.js';
+import { bindClassification, downloadControl, options, request, selectors, status } from './shared.js';
 
 const customerFields = ['company_name','install_address','billing_address','contact_name','phone','id_number','email'];
 function field(name, title, type = 'text') {
@@ -8,7 +8,7 @@ function field(name, title, type = 'text') {
 export function generation(labels) {
   return '<form id="generate-form">' + selectors() +
     '<button class="button" type="button" id="match">匹配模板</button><div id="match-result"></div>' +
-    '<div class="divider"></div><h3>客户资料</h3><div class="field-grid">' +
+    '<div class="divider"></div><h3>客户资料</h3><button id="fill-example" type="button">用虚构样例补全空白栏</button><div class="field-grid">' +
     customerFields.map(key => field(key, labels[key], key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text')).join('') +
     '<label>付款方式<select name="payment_method" required><option value="">请选择</option><option value="cash">现金</option><option value="collection">托收</option></select></label></div>' +
     '<fieldset hidden id="bank-fields" disabled><div class="field-grid">' + field('bank_account', labels.bank_account) +
@@ -25,6 +25,21 @@ export function bindGeneration(root, state) {
   const generated = root.querySelector('#generated');
   const bank = root.querySelector('#bank-fields');
   let epoch = 0, candidates = [], template = null, matchToken, requestId, busy = false;
+  root.querySelector('#fill-example').onclick = () => {
+    const fixture = { company_name:'虚构测试企业', install_address:'虚构安装路一号', billing_address:'虚构账单路二号',
+      contact_name:'测试甲乙', phone:'10000000000', id_number:'000000000000000000', email:'fixture@example.invalid' };
+    for (const [key, value] of Object.entries(fixture)) {
+      if (!form.elements[key].value) form.elements[key].value = value;
+    }
+    const payment = form.elements.payment_method;
+    if (!payment.value) payment.value = 'collection';
+    payment.dispatchEvent(new Event('change', {bubbles:true}));
+    if (payment.value === 'collection') {
+      if (!form.elements.bank_account.value) form.elements.bank_account.value = '00000000654321';
+      if (!form.elements.bank_name.value) form.elements.bank_name.value = '虚构测试银行';
+    }
+    form.dispatchEvent(new Event('input', {bubbles:true}));
+  };
   function choose(id) {
     template = candidates.find(row => row.id === id);
     extra.innerHTML = (template?.extra_fields ?? []).map(k => field(k, '模板必填 · ' + k.slice(6))).join('');
@@ -82,7 +97,7 @@ export function bindGeneration(root, state) {
     try {
       const row = await request('/generate', { method: 'POST', data: { request_id: requestId, match_token: matchToken, template_id: template.id, selection: selected(), customer } });
       status(root, '生成成功，文件已保存到此账号的历史记录。');
-      generated.innerHTML = '<button class="button" data-file="/records/' + esc(row.id) + '/file">下载已生成的 Word</button>';
+      generated.innerHTML = downloadControl('/records/' + row.id + '/file', '下载已生成的 Word', state.hosted);
     } catch (error) {
       status(root, error.message);
       if (error.status === 409) { invalidate(); status(root, error.message); }
