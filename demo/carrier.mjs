@@ -188,15 +188,17 @@ export function analyzeCarrier(bytes,variant) {
   for (const t of wt(doc)) t.textContent = t.textContent.replace(glyphs,'□');
   files[body] = serialize(doc);
   const tags = [...new Set(wt(doc).flatMap(t=>[...t.textContent.matchAll(/\{\{([a-z_]+)\}\}/g)].map(m=>m[1])))];
-  const discounted=october && variant==='discount';
-  return {profile:discounted?discountProfile:october?octoberProfile:profile,variantRequired:october,
-    name:october?name+(discounted?'（打折、不带语音 · 10 月 21 日版）':'（不打折、不带语音 · 10 月 21 日版）'):name,
+  const discountNote=[39,40].some(i=>/(?:\d+(?:\.\d+)?折|折扣|折后)/.test(compact(p[i])));
+  const discounted=variant==='discount';
+  const baseProfile=october?octoberProfile:profile;
+  return {profile:discounted?baseProfile+'-discount':baseProfile,variantRequired:october||discountNote,discountNote,
+    name:october?name+(discounted?'（打折、不带语音 · 10 月 21 日版）':'（不打折、不带语音 · 10 月 21 日版）'):name+(discounted?'（打折、不带语音）':''),
     revision:october?'2026-10-21':'2026/A',rates,tags,file:zipSync(files,{level:6})};
 }
 
 export function renderCarrier(bytes, customer, rate) {
   const files = unpack(bytes), {doc,p,october} = profileDocument(files);
-  requireThat((october?[octoberProfile,discountProfile]:[profile]).includes(rate.carrier_profile),'套餐与 Word 版式不一致。');
+  requireThat((october?[octoberProfile,discountProfile]:[profile,profile+'-discount']).includes(rate.carrier_profile),'套餐与 Word 版式不一致。');
   const marks = new Map();
   const select = (i,j) => marks.set(i,[...(marks.get(i)||[]),j]);
   const value = key => typeof customer[key] === 'string' ? customer[key].trim() : '';

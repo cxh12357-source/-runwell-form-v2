@@ -132,19 +132,29 @@ function bindSmartImport(root) {
     if(files.length!==1 || !/\.docx$/i.test(files[0].name) || !files[0].size || files[0].size>524288){
       tell('请一次选择一份 512 KiB 以内的 DOCX。'); return;
     }
+    const filename=files[0].name.normalize('NFKC').replace(/\s+/g,'');
     tell('已收到「'+files[0].name+'」，正在解析 Word…');
     try {
       const file=await readFile(files[0]);
       const result=await request('/templates/inspect',{method:'POST',data:{file}});
       if(ticket!==epoch || !root.isConnected)return;
-      tell('解析成功。员工生成表单时按客户需求选择资费。');
+      const standard=/不打折|无折扣|未打折/.test(filename);
+      const discount=/打折|折扣|\d+(?:\.\d+)?折/.test(filename.replace(/不打折|无折扣|未打折/g,''));
+      const conflict=(standard && (result.discountNote || discount));
+      const suggested=conflict?'':(result.discountNote || discount)?'discount':standard?'standard':'';
+      const basis=result.discountNote?'基础套餐备注':'文件名';
+      const confirmVariant=result.variantRequired||discount;
+      tell(!confirmVariant?'解析成功。员工生成表单时按客户需求选择资费。':
+        conflict?'基础套餐备注或文件名中的折扣信息有冲突，请核对后选择。':
+        suggested?'已按'+basis+'预选模板类型，请核对后导入。':'未找到明确的折扣标记，请确认模板类型。');
       preview.innerHTML='<p>识别到：<strong>'+esc(result.name)+'</strong> · 商务专线／不带语音／新装</p>'+
         '<p>已定位 '+Number(result.tags.length)+' 个占位符，所有方框默认留空。</p><ul>'+
         result.rates.map(r=>'<li>'+esc(r.bandwidth+' · '+r.amount+' 元/'+r.cycle+'/线')+'</li>').join('')+
-        '</ul><form id="smart-confirm">'+(result.variantRequired?
+        '</ul><form id="smart-confirm">'+(confirmVariant?
           '<label>确认模板类型<select name="variant" required><option value="">请选择打折或不打折</option><option value="discount">100M 打折、不带语音</option><option value="standard">100M 不打折、不带语音</option></select></label>':'')+
         '<button class="button">导入模板</button></form>';
       const confirm=preview.querySelector('form');
+      if(confirm.elements.variant)confirm.elements.variant.value=suggested;
       confirm.onsubmit=async event=>{
         event.preventDefault();
         const button=confirm.querySelector('button');button.disabled=true;picker.disabled=true;
