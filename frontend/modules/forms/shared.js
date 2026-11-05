@@ -63,3 +63,9 @@ export function bindClassification(form, state) {
       business_attribute: controls[2].value, voice_required: t.voice_required, bandwidth: t.bandwidth, cycle: t.cycle, amount: t.amount };
   };
 }
+
+export function downloadControl(path, title, hosted) {
+  return hosted
+    ? '<a class="button" download href="/api/v1/forms' + esc(path) + '">' + esc(title) + '</a>'
+    : '<button class="button" type="button" data-file="' + esc(path) + '">' + esc(title) + '</button>';
+}
