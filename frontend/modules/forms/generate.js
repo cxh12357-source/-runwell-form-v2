@@ -1,24 +1,31 @@
 import { escape as esc } from '../../lib/api.js';
 import { bindClassification, downloadControl, options, request, selectors, status } from './shared.js';
 
+import { bindIntake, intakePanel, internalPanel, intakeExtraKeys } from './intake.js';
+
 const customerFields = ['company_name','install_address','billing_address','contact_name','phone','id_number','email'];
 function field(name, title, type = 'text') {
   return '<label>' + esc(title) + '<input name="' + esc(name) + '" type="' + type + '" required maxlength="500" autocomplete="off"></label>';
 }
-export function generation(labels) {
+export function generationShell(content) {
   return '<form id="generate-form">' + selectors() +
-    '<button class="button" type="button" id="match">匹配模板</button><div id="match-result"></div>' +
+    '<button class="button" type="button" id="match">匹配模板</button><div id="match-result"></div>' + content +
+    '<button id="generate" class="button" disabled>确认生成 Word</button></form><div id="generated"></div>';
+}
+
+export function generation(labels) {
+  return generationShell(intakePanel() +
     '<div class="divider"></div><h3>客户资料</h3><button id="fill-example" type="button">用虚构样例补全空白栏</button><div class="field-grid">' +
     customerFields.map(key => field(key, labels[key], key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text')).join('') +
     '<label>付款方式<select name="payment_method" required><option value="">请选择</option><option value="cash">现金</option><option value="collection">托收</option></select></label></div>' +
     '<fieldset hidden id="bank-fields" disabled><div class="field-grid">' + field('bank_account', labels.bank_account) +
-    field('bank_name', labels.bank_name) + '</div></fieldset><div id="extra" class="field-grid"></div>' +
-    '<button id="generate" class="button" disabled>确认生成 Word</button></form><div id="generated"></div>';
+    field('bank_name', labels.bank_name) + '</div></fieldset><div id="extra" class="field-grid"></div>' + internalPanel());
 }
 
 export function bindGeneration(root, state) {
   const form = root.querySelector('#generate-form');
   const selected = bindClassification(form, state);
+  const intake = bindIntake(form, state);
   const result = root.querySelector('#match-result');
   const extra = root.querySelector('#extra');
   const generate = root.querySelector('#generate');
@@ -31,6 +38,7 @@ export function bindGeneration(root, state) {
     for (const [key, value] of Object.entries(fixture)) {
       if (!form.elements[key].value) form.elements[key].value = value;
     }
+    form.elements.company_name.dispatchEvent(new Event('change', {bubbles:true}));
     const payment = form.elements.payment_method;
     if (!payment.value) payment.value = 'collection';
     payment.dispatchEvent(new Event('change', {bubbles:true}));
@@ -42,7 +50,9 @@ export function bindGeneration(root, state) {
   };
   function choose(id) {
     template = candidates.find(row => row.id === id);
-    extra.innerHTML = (template?.extra_fields ?? []).map(k => field(k, '模板必填 · ' + k.slice(6))).join('');
+    const keys = template?.extra_fields ?? [];
+    intake.setExtras(keys);
+    extra.innerHTML = keys.filter(k => !intakeExtraKeys.includes(k)).map(k => field(k, '模板必填 · ' + k.slice(6))).join('');
     generate.disabled = busy || !template;
     requestId = undefined;
   }
@@ -87,9 +97,11 @@ export function bindGeneration(root, state) {
   form.onsubmit = async event => {
     event.preventDefault();
     if (busy || !template) return;
+    const reminder=intake.beforeGenerate();
+    if(reminder) return status(root, reminder);
     const customer = {};
     for (const [name, value] of new FormData(form)) {
-      if (customerFields.includes(name) || ['payment_method','bank_name','bank_account'].includes(name) || name.startsWith('extra_')) customer[name] = value;
+      if (customerFields.includes(name) || ['payment_method','bank_name','bank_account'].includes(name) || template.extra_fields?.includes(name)) customer[name] = value;
     }
     requestId ??= crypto.randomUUID();
     busy = true;
