@@ -1,0 +1,53 @@
+name: Update shared demo
+
+on:
+  push:
+    branches: [feature/project-skeleton]
+  pull_request:
+    branches: [feature/project-skeleton]
+
+permissions:
+  contents: read
+
+# Serialize publishes so an older run cannot overwrite a newer deployment.
+# Pull request checks use a separate group and never receive the publish key.
+concurrency:
+  group: runwell-demo-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'publish' }}
+  cancel-in-progress: false
+
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Test code and demo packaging
+        run: node --test tests/*.test.mjs
+      - name: Build the read-only public demo
+        run: node scripts/build-public-demo.mjs
+      - name: Check publication credential
+        if: github.event_name == 'push'
+        env:
+          SHIP_TOKEN: ${{ secrets.SHIP_TOKEN }}
+        run: |
+          if [[ "$SHIP_TOKEN" != ship-* ]]; then
+            echo '::error::Add the ShipStatic API key as the SHIP_TOKEN repository secret. Domain updates require an API key.'
+            exit 1
+          fi
+      - name: Publish and update the fixed URL
+        if: github.event_name == 'push'
+        uses: shipstatic/action@7aa499b8eaaf25ed583c5112301f005b5c108e12 # v3
+        with:
+          token: ${{ secrets.SHIP_TOKEN }}
+          path: ./dist/demo
+          domain: runwell-demo.shipstatic.com
+          labels: runwell-demo,shared-preview
+          github-token: ''
