@@ -4,7 +4,7 @@ import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { wordFile } from '../backend/modules/forms/preview/store.mjs';
-import { labels, defaultMapping } from '../backend/modules/forms/preview/rules.mjs';
+import { tariffs, sampleLabels, sampleMapping } from '../backend/modules/forms/preview/rules.mjs';
 
 if(!process.argv[2]) throw new Error('请提供一个全新的 Vinext Sites starter 目录。');
 const online=dirname(fileURLToPath(import.meta.url)), repo=dirname(online), target=resolve(process.argv[2]);
@@ -19,7 +19,11 @@ const manifest=JSON.parse(await read('.openai/hosting.json'));
 const require=createRequire(import.meta.url);
 const saxFile=require.resolve('sax');
 const fflateRoot=dirname(dirname(require.resolve('fflate')));
-const sample=await wordFile({labels,mapping:defaultMapping});
+const sample={};
+for (const tariff of tariffs) {
+  const bytes=await wordFile({labels:sampleLabels(tariff), mapping:sampleMapping(tariff)});
+  sample[tariff.id]=bytes.toString('base64');
+}
 for(const dir of ['forms','tests','vendor/qa-sax','vendor/qa-fflate'])await mkdir(inTarget(dir),{recursive:true});
 await cp(join(repo,'frontend'),inTarget('public'),{recursive:true,filter:p=>p!==join(repo,'frontend/index.html')});
 const html=await readFile(join(repo,'frontend/index.html'),'utf8');
@@ -27,7 +31,7 @@ await put('public/workspace.html',html.replace('本地开发预览','线上验�
 await copyFile(join(repo,'backend/modules/forms/preview/rules.mjs'),inTarget('forms/rules.mjs'));
 await copyFile(join(repo,'backend/modules/catalog/data.mjs'),inTarget('forms/data.mjs'));
 for(const name of ['service.mjs','word.mjs'])await copyFile(join(online,name),inTarget('forms',name));
-await put('forms/sample.json',JSON.stringify({file:sample.toString('base64')})+'\n');
+await put('forms/sample.json',JSON.stringify(sample)+'\n');
 await copyFile(saxFile,inTarget('vendor/qa-sax/sax.cjs'));
 await copyFile(join(dirname(dirname(saxFile)),'LICENSE.md'),inTarget('vendor/qa-sax/LICENSE.md'));
 await copyFile(join(fflateRoot,'esm/browser.js'),inTarget('vendor/qa-fflate/browser.js'));
