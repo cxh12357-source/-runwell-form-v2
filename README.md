@@ -2,7 +2,7 @@
 
 业务报价 → 表单填写 → 手续审核。
 
-共享演示入口：https://runwell-demo.shipstatic.com/#/forms 。两人的代码合并到 `feature/project-skeleton` 后，由 GitHub Actions 检查并自动发布免登录展示版。首次需要配置仓库发布凭据，详见 [演示发布说明](docs/demo-publishing.md)。
+共享演示入口：https://runwell-demo.shipstatic.com/#/forms 。两人的代码合并到 `feature/project-skeleton` 后，由 GitHub Actions 检查并自动发布免登录演示版。演示使用虚构资料，模板与生成历史各自保存在浏览器。详见 [演示发布说明](docs/demo-publishing.md)。
 
 默认模式为可运行骨架：报价和审核提供占位入口；表单填写包含表单生成、历史记录、套餐模板管理。客户字段禁用，仅供布局预览。尚未连接数据库或实现登录、保存、上传、模板匹配、Word生成和审核。
 
