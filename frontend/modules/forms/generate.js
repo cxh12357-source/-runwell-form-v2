@@ -1,0 +1,91 @@
+import { escape as esc } from '../../lib/api.js';
+import { bindClassification, options, request, selectors, status } from './shared.js';
+
+const customerFields = ['company_name','install_address','billing_address','contact_name','phone','id_number','email'];
+function field(name, title, type = 'text') {
+  return '<label>' + esc(title) + '<input name="' + esc(name) + '" type="' + type + '" required maxlength="500" autocomplete="off"></label>';
+}
+export function generation(labels) {
+  return '<form id="generate-form">' + selectors() +
+    '<button class="button" type="button" id="match">匹配模板</button><div id="match-result"></div>' +
+    '<div class="divider"></div><h3>客户资料</h3><div class="field-grid">' +
+    customerFields.map(key => field(key, labels[key], key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text')).join('') +
+    '<label>付款方式<select name="payment_method" required><option value="">请选择</option><option value="cash">现金</option><option value="collection">托收</option></select></label></div>' +
+    '<fieldset hidden id="bank-fields" disabled><div class="field-grid">' + field('bank_account', labels.bank_account) +
+    field('bank_name', labels.bank_name) + '</div></fieldset><div id="extra" class="field-grid"></div>' +
+    '<button id="generate" class="button" disabled>确认生成 Word</button></form><div id="generated"></div>';
+}
+
+export function bindGeneration(root, state) {
+  const form = root.querySelector('#generate-form');
+  const selected = bindClassification(form, state);
+  const result = root.querySelector('#match-result');
+  const extra = root.querySelector('#extra');
+  const generate = root.querySelector('#generate');
+  const generated = root.querySelector('#generated');
+  const bank = root.querySelector('#bank-fields');
+  let epoch = 0, candidates = [], template = null, matchToken, requestId, busy = false;
+  function choose(id) {
+    template = candidates.find(row => row.id === id);
+    extra.innerHTML = (template?.extra_fields ?? []).map(k => field(k, '模板必填 · ' + k.slice(6))).join('');
+    generate.disabled = busy || !template;
+    requestId = undefined;
+  }
+  function invalidate() {
+    epoch++;
+    candidates = [];
+    matchToken = undefined;
+    result.replaceChildren();
+    choose('');
+    status(root, '');
+  }
+  form.oninput = () => { requestId = undefined; generated.replaceChildren(); };
+  form.addEventListener('change', event => {
+    if (['biz','ver','attr','tariff'].includes(event.target.name)) invalidate();
+    if (event.target.name === 'candidate') choose(event.target.value);
+    if (event.target.name === 'payment_method') {
+      bank.disabled = bank.hidden = event.target.value !== 'collection';
+      if (bank.disabled) for (const input of bank.querySelectorAll('input')) input.value = '';
+    }
+  });
+  root.querySelector('#match').onclick = async () => {
+    invalidate();
+    const selection = selected();
+    if (!selection) return status(root, '请依次选择业务名称、版本、属性及套餐。');
+    const ticket = epoch;
+    try {
+      const match = await request('/match', { method: 'POST', data: { selection } });
+      if (ticket !== epoch) return;
+      candidates = match.candidates;
+      matchToken = match.match_token;
+      if (!candidates.length) return status(root, match.status === 'conflict' ? '套餐与已选资料冲突，请重新核对。' : '没有可用模板，请核对套餐或联系模板管理员。');
+      result.innerHTML = '<p>匹配依据　' + esc(match.basis.join(' · ')) + '</p>';
+      if (candidates.length === 1) {
+        result.innerHTML += '<p>已匹配　' + esc(candidates[0].name) + '（' + esc(candidates[0].revision) + '）</p>';
+        choose(candidates[0].id);
+      } else {
+        result.innerHTML += '<label>多个模板符合条件，请选择<select name="candidate" required>' +
+          options(candidates.map(t => ({ id: t.id, name: t.name + '（' + t.revision + '）' }))) + '</select></label>';
+      }
+    } catch (error) { if (ticket === epoch) status(root, error.message); }
+  };
+  form.onsubmit = async event => {
+    event.preventDefault();
+    if (busy || !template) return;
+    const customer = {};
+    for (const [name, value] of new FormData(form)) {
+      if (customerFields.includes(name) || ['payment_method','bank_name','bank_account'].includes(name) || name.startsWith('extra_')) customer[name] = value;
+    }
+    requestId ??= crypto.randomUUID();
+    busy = true;
+    generate.disabled = true;
+    try {
+      const row = await request('/generate', { method: 'POST', data: { request_id: requestId, match_token: matchToken, template_id: template.id, selection: selected(), customer } });
+      status(root, '生成成功，文件已保存到此账号的历史记录。');
+      generated.innerHTML = '<button class="button" data-file="/records/' + esc(row.id) + '/file">下载已生成的 Word</button>';
+    } catch (error) {
+      status(root, error.message);
+      if (error.status === 409) { invalidate(); status(root, error.message); }
+    } finally { busy = false; generate.disabled = !template; }
+  };
+}

@@ -12,15 +12,22 @@ function json(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
-export function createApp() {
+export function createApp(preview = null) {
   return createServer(async (req, res) => {
     try {
       const path = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
+      if (preview && !/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(req.headers.host || '')) {
+        return json(res, 403, { error: { code: 'LOCAL_ONLY', message: '联调模式只接受本机访问。' } });
+      }
+      if (path === '/api/v1/forms/mode' && req.method === 'GET') return json(res, 200, { data: { preview: Boolean(preview) } });
+      if (preview && path.startsWith('/api/v1/forms/')) {
+        return await preview.route(req, res, path.slice('/api/v1/forms'.length), json);
+      }
       if (req.method !== 'GET') {
         return json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: '当前骨架仅提供读取接口，业务提交尚未开放。' } });
       }
-      if (path === '/api/v1/health') return json(res, 200, { data: { status: 'ok', mode: 'skeleton', version: '0.1.0' } });
-      if (path === '/api/v1/catalog') return json(res, 200, { data: catalog });
+      if (path === '/api/v1/health') return json(res, 200, { data: { status: 'ok', mode: preview ? 'forms-preview' : 'skeleton', version: '0.1.0' } });
+      if (path === '/api/v1/catalog') return json(res, 200, { data: preview ? { ...catalog, versions: [...catalog.versions, preview.version] } : catalog });
       const resource = getFormsResource(path);
       if (resource) return json(res, 200, resource);
       if (path.startsWith('/api/')) return json(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在或尚未开放。' } });
@@ -34,6 +41,7 @@ export function createApp() {
       res.writeHead(200, { 'Content-Type': types[extname(target)], 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store' });
       res.end(content);
     } catch (error) {
+      if (error.status) return json(res, error.status, { error: { code: 'FORMS_' + error.status, message: error.message } });
       const status = error.code === 'ENOENT' ? 404 : error instanceof URIError ? 400 : 500;
       json(res, status, { error: { code: status === 500 ? 'INTERNAL_ERROR' : 'INVALID_RESOURCE', message: '无法读取此资源。' } });
     }

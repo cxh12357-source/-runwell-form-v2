@@ -1,3 +1,4 @@
+import { bindPreview, renderPreview } from './forms/preview.js';
 import { get, escape } from '../lib/api.js';
 
 const tabs = [['/forms/generate', '表单生成'], ['/forms/history', '表单历史记录'], ['/forms/templates', '套餐模板管理']];
@@ -13,6 +14,8 @@ function selector(catalog) {
   return `<div class="classification"><label>业务名称<select id="business"><option value="">请选择业务名称</option>${catalog.businesses.map(b => `<option value="${escape(b.id)}">${escape(b.name)}</option>`).join('')}</select></label><label>业务版本<select id="version" disabled><option value="">请先选择业务名称</option></select></label><label>业务属性<select id="attribute" disabled><option value="">请先选择业务版本</option>${catalog.attributes.map(a => `<option value="${escape(a.id)}">${escape(a.name)}</option>`).join('')}</select></label></div><p class="hint" id="classification-note">分类顺序：业务名称 → 业务版本 → 业务属性。当前尚未录入业务版本与正式模板。</p>`;
 }
 export async function renderForms(path) {
+  const { data: mode } = await get('/forms/mode');
+  if (mode.preview) return renderPreview(path, tabs);
   const [{ data: catalog }, resource] = await Promise.all([
     get('/catalog'),
     path === '/forms/history' ? get('/forms/records') : path === '/forms/templates' ? get('/forms/templates') : Promise.resolve(null)
@@ -28,6 +31,7 @@ export async function renderForms(path) {
   return `<a class="back" href="#/">← 返回工作台</a><div class="eyebrow">FORM WORKSPACE</div><h1>表单填写</h1><p class="lead">客户资料、业务模板与生成记录，集中处理。</p><nav class="tabs" aria-label="表单子板块">${tabs.map(([url, title]) => `<a href="#${url}" ${path === url ? 'aria-current="page"' : ''}>${title}</a>`).join('')}</nav>${body}`;
 }
 export function bindForms() {
+  if (document.querySelector('#forms-preview')) return bindPreview();
   const business = document.querySelector('#business');
   if (!business) return;
   business.addEventListener('change', () => {
