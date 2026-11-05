@@ -53,7 +53,7 @@ const fields = {
   contact_name: ['经办人完整姓名','经办人姓名','经办人','联系人'],
   phone: ['经办人联系电话（手机）','经办人联系电话','经办人手机号','联系电话','手机号码','手机号','手机','电话'],
   id_number: ['经办人身份证号码','经办人身份证号','身份证号码','身份证号','身份证'],
-  email: ['经办人E-MAIL','经办人邮箱','电子邮箱','邮箱','E-MAIL','EMAIL'],
+  email: ['经办人E-MAIL','经办人EMAIL','经办人邮箱','电子邮箱','邮箱','E-MAIL','EMAIL'],
   payment_method: ['付款方式','支付方式','付款'],
   bank_name: ['开户银行','开户行'], bank_account: ['银行账号','银行账户','银行帐号','银行卡号','账号'],
   extra_legal_name: ['法定代表人','法人代表','法人'],
@@ -67,13 +67,15 @@ export const companyTitles = {
 };
 const aliases = Object.entries(fields).flatMap(([key,names]) => names.map(name => [name.normalize('NFKC').toLowerCase(),key]));
 const keyByAlias = new Map(aliases);
-const escaped = [...keyByAlias.keys()].sort((a,b) => b.length-a.length).map(s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
+const escaped = [...keyByAlias.keys()].sort((a,b) => b.length-a.length).map(alias =>
+  alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/^经办人(?=.)/, '经办人[ \\t]*'));
 const marker = new RegExp('(?:^|[\\n,;。]|[ \\t]+)[ \\t]*(?:\\d{1,2}[、.．)）][ \\t]*)?('+escaped.join('|')+')[ \\t]*(?:[:=]|是|为|[ \\t]+)[ \\t]*','giu');
 const missingValue = /^(?:[-—/]|无|待定|暂无|未提供|不详|待补充|现金\s*[/／]\s*托收)$/;
 function normalize(key, value) {
   let text = value.trim().replace(/[。;；,，、]+$/u,'').trim();
   if (!text || missingValue.test(text)) return '';
   if (key==='payment_method') return ({现金:'cash',托收:'collection',cash:'cash',collection:'collection'})[text] || text;
+  if (key==='phone' && /^1\d{2}(?:[ \t‐‑–—−-]?\d{4}){2}$/.test(text)) return text.replace(/\D/g,'');
   if (key==='bank_account') text=text.replace(/[ -]/g,'');
   if (['id_number','extra_legal_id','extra_user_id'].includes(key)) text=text.toUpperCase();
   return text;
@@ -87,7 +89,7 @@ export function parseReply(raw) {
   }
   const matches=[...text.matchAll(marker)];
   for (const [i,m] of matches.entries()) {
-    const key=keyByAlias.get(m[1].toLowerCase());
+    const key=keyByAlias.get(m[1].replace(/[ \t]/g,'').toLowerCase());
     const segment=text.slice(m.index+m[0].length, matches[i+1]?.index ?? text.length);
     const value=segment.split(/[\n,;。]/)[0].trim();
     add(key,value);
@@ -95,9 +97,10 @@ export function parseReply(raw) {
   // Only infer values with a distinctive format from unlabeled clauses.
   for (const clause of text.split(/[,;。\n]/).map(s=>s.trim()).filter(Boolean)) {
     if ([...(' '+clause).matchAll(marker)].length) continue;
-    const mail=clause.match(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/ig)||[];
+    const emailPattern = /[\w.+-]+@[\w.-]+\.[a-z]{2,}/ig;
+    const mail=clause.match(emailPattern)||[];
     for(const value of mail) add('email',value);
-    for(const m of clause.matchAll(/(?<!\d)1\d{10}(?!\d)/g)) add('phone',m[0]);
+    for(const m of clause.replace(emailPattern,' ').matchAll(/(?<!\d)1\d{2}(?:[ \t‐‑–—−-]?\d{4}){2}(?!\d)/g)) add('phone',m[0]);
     if(/^(?:我们(?:公司)?(?:是|叫)|我司(?:为|是)?|公司叫)?[\u4e00-\u9fa5A-Za-z0-9（）()·]{2,60}(?:有限公司|股份公司|合伙企业)$/.test(clause))
       add('company_name',clause.replace(/^(?:我们(?:公司)?(?:是|叫)|我司(?:为|是)?|公司叫)/,''));
     const spoken=[
