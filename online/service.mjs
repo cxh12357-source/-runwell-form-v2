@@ -1,10 +1,10 @@
 import { catalog } from './data.mjs';
-import { defaultMapping, FormError, insist, labels, match, tariffs, validateCustomer, validateMapping, version } from './rules.mjs';
+import { checkTariffMapping, sampleMapping, voiceVersion, FormError, insist, labels, match, tariffs, validateCustomer, validateMapping, version } from './rules.mjs';
 import { mime, renderWord } from './word.mjs';
 import sample from './sample.json' with {type:'json'};
 
 const accounts = {a:{id:'员工 A',role:'staff'}, b:{id:'员工 B',role:'staff'}, admin:{id:'模板管理员',role:'admin'}};
-const defaultFile = Uint8Array.from(atob(sample.file),c=>c.charCodeAt(0));
+const sampleFiles = new Map(Object.entries(sample).map(([id, file]) => [id, Uint8Array.from(atob(file), c => c.charCodeAt(0))]));
 const safeHeaders = {'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'};
 const json = (data,status=200) => Response.json({data},{status,headers:safeHeaders});
 const list = data => Response.json({data,meta:{total:data.length}},{headers:safeHeaders});
@@ -37,8 +37,8 @@ async function candidates(selection,db,tenant){
   res.match_token=await signature(JSON.stringify(res.candidates));
   return res;
 }
-async function bytesFor(bucket,key){
-  if(key===null) return defaultFile;
+async function bytesFor(bucket,key,tariffId){
+  if(key===null && sampleFiles.has(tariffId)) return sampleFiles.get(tariffId);
   const obj=await bucket.get(key);if(!obj)throw new Error('Missing document object');
   return new Uint8Array(await obj.arrayBuffer());
 }
@@ -52,7 +52,7 @@ async function startSession(req,db,tenant) {
   ];
   for(const t of tariffs){
     statements.push(db.prepare('INSERT OR IGNORE INTO qa_templates(tenant,id,tariff_id,name,revision,active,mapping) VALUES(?,?,?,?,?,1,?)')
-      .bind(tenant,t.id+'-sample',t.id,t.name+' 新装样表','demo-1',JSON.stringify(defaultMapping)));
+      .bind(tenant,t.id+'-sample',t.id,t.name+' 新装样表','demo-1',JSON.stringify(sampleMapping(t))));
   }
   await db.batch(statements);
   const response=json({token,actor:accounts[account]});
@@ -65,6 +65,7 @@ async function upload(data,db,bucket,tenant) {
   for(const v of [name,revision])insist(typeof v==='string' && v.trim() && v.length<=80 && !/[\x00-\x1f]/.test(v),'请填写模板名称和版本号。');
   insist(typeof file==='string' && file.length>0 && file.length<=699052,'请上传 512 KiB 以内的 DOCX。');
   const mapping=validateMapping(data.mapping);
+  checkTariffMapping(mapping,tariffs.find(t => t.id === tariff_id));
   let bytes;try {bytes=Uint8Array.from(atob(file),c=>c.charCodeAt(0));}catch{throw new FormError('文件编码无效。');}
   const cleaned=renderWord(bytes,mapping);
   const key='templates/'+tenant+'/'+id;
@@ -86,7 +87,7 @@ async function generate(data,db,bucket,tenant,actor) {
   const t=await db.prepare('SELECT * FROM qa_templates WHERE tenant=? AND id=?').bind(tenant,template_id).first();
   const tariff=tariffs.find(t=>t.id===selection.tariff_id);
   const mapping=JSON.parse(t.mapping), values=validateCustomer(customer,mapping,tariff);
-  const file=renderWord(await bytesFor(bucket,t.object_key),mapping,values);
+  const file=renderWord(await bytesFor(bucket,t.object_key,t.tariff_id),mapping,values);
   const id=crypto.randomUUID(), key='records/'+tenant+'/'+id;
   const snapshot={id,created_by:accounts[actor].id,created_at:new Date().toISOString(),status:'generated',
     business_id:tariff.business_id,business_version_id:tariff.business_version_id,business_attribute:tariff.business_attribute,
@@ -117,7 +118,7 @@ export async function handleForms(req,env) {
     }
     if(path==='/forms/mode' && method==='GET')return json({preview:true,hosted:true});
     if(path==='/health' && method==='GET')return json({status:'ok',mode:'hosted-acceptance'});
-    if(path==='/catalog' && method==='GET')return json({...catalog,versions:[...catalog.versions,version]});
+    if(path==='/catalog' && method==='GET')return json({...catalog,versions:[...catalog.versions,version,voiceVersion]});
     insist(env.DB && env.BUCKET,'验收存储尚未就绪。',503);
     const db=env.DB, bucket=env.BUCKET;
     if(path==='/forms/test-session' && method==='POST')return await startSession(req,db,tenant);
@@ -149,8 +150,8 @@ export async function handleForms(req,env) {
       if(path==='/forms/templates' && method==='POST')return await upload(await body(req),db,bucket,tenant);
       const item=/^\/forms\/templates\/([\w-]+)(\/file)?$/.exec(path);
       if(item?.[2] && method==='GET'){
-        const t=await db.prepare('SELECT object_key FROM qa_templates WHERE tenant=? AND id=?').bind(tenant,item[1]).first();
-        insist(t,'找不到模板。',404);return documentFile(await bytesFor(bucket,t.object_key));
+        const t=await db.prepare('SELECT object_key,tariff_id FROM qa_templates WHERE tenant=? AND id=?').bind(tenant,item[1]).first();
+        insist(t,'找不到模板。',404);return documentFile(await bytesFor(bucket,t.object_key,t.tariff_id));
       }
       if(item && !item[2] && method==='PATCH'){
         const {active}=await body(req);insist(typeof active==='boolean','请明确启用或停用。');
