@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "node backend/server.mjs",
     "start": "node backend/server.mjs",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "build:demo": "node scripts/build-public-demo.mjs"
   }
 }
