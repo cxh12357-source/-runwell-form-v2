@@ -39,9 +39,10 @@ async function candidates(selection,db,tenant,plugin){
   const rows=await templates(db,tenant), res=match(selection,rows,plans);
   for(const c of res.candidates){
     c.extra_fields=[...new Set(Object.values(rows.find(t=>t.id===c.id).mapping).filter(k=>k.startsWith('extra_')))];
-    if(plans.find(t=>t.id===selection.tariff_id)?.carrier_profile && c.id.startsWith('carrier-')){
-      c.carrier_controls=plugin.controls;
-      c.extra_fields=[...plugin.controls.inputs.map(x=>x[0]),...plugin.controls.groups.map(x=>x.key)];
+    const profile=plans.find(t=>t.id===selection.tariff_id)?.carrier_profile;
+    if(profile && c.id.startsWith('carrier-')){
+      c.carrier_controls=plugin.controls(profile);
+      c.extra_fields=[...c.carrier_controls.inputs.map(x=>x[0]),...c.carrier_controls.groups.map(x=>x.key)];
     }
   }
   res.match_token=await signature(JSON.stringify(res.candidates));
@@ -127,7 +128,7 @@ async function importCarrier(data,db,bucket,tenant,plugin,save) {
   let info;
   try { info=plugin.analyzeCarrier(Uint8Array.from(atob(data.file),c=>c.charCodeAt(0))); }
   catch(error) { throw new FormError(error.message); }
-  const {profile,name,rates,tags,file}=info;
+  const {profile,name,revision,rates,tags,file}=info;
   if(!save)return json({name,rates,tags});
   const rate=rates.find(r=>r.key===data.rate);
   insist(rate,'请选择管理员已核对的基础资费。');
@@ -142,7 +143,7 @@ async function importCarrier(data,db,bucket,tenant,plugin,save) {
     await db.batch([
       db.prepare('INSERT INTO demo_tariffs(tenant,id,data) VALUES(?,?,?)').bind(tenant,id,JSON.stringify(tariff)),
       db.prepare('INSERT INTO qa_templates(tenant,id,tariff_id,name,revision,active,mapping,object_key) VALUES(?,?,?,?,?,0,?,?)')
-        .bind(tenant,id,id,name+' 申请登记表','2026/A',JSON.stringify(Object.fromEntries(tags.map(tag=>[tag,tag]))),key)
+        .bind(tenant,id,id,name+' 申请登记表',revision,JSON.stringify(Object.fromEntries(tags.map(tag=>[tag,tag]))),key)
     ]);
   } catch(error){await bucket.delete(key);throw error;}
   return json({id,duplicate:false},201);

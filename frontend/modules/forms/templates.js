@@ -4,7 +4,7 @@ import { bindClassification, downloadControl, request, selectors, status, refres
 export function templatesView({ rows, workspace, hosted }) {
   const mapping = Object.fromEntries(Object.keys(workspace.labels).map(key => [key, key]));
   const smart = workspace.smart_import ? '<section class="smart-import" aria-labelledby="smart-title"><h3 id="smart-title">智能导入 Word</h3>' +
-    '<p>支持智云上海专线基础版（FTTR-B）2026/A 不带语音。演示请使用虚构资料。</p>' +
+    '<p>支持智云上海专线基础版（FTTR-B）不带语音：5 月版、10 月 21 日版。演示请使用虚构资料。</p>' +
     '<div id="smart-drop"><label for="smart-file">把 .docx 文件拖到虚线框内</label><input id="smart-file" type="file" accept=".docx"></div>' +
     '<p class="hint">拖拽没有反应时，可点击「选择文件」，两种方式使用相同的解析流程。</p>' +
     '<p id="smart-status" role="status"></p><div id="smart-preview" aria-live="polite"></div></section><div class="divider"></div><h3>手动上传模板</h3>' : '';

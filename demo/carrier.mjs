@@ -4,6 +4,7 @@ const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const R = 'http://schemas.openxmlformats.org/package/2006/relationships';
 const P = 'http://schemas.openxmlformats.org/package/2006/content-types';
 const profile = 'fttr-b-shanghai-2026-a';
+const octoberProfile = 'fttr-b-shanghai-2026-10-21';
 const name = '智云上海专线基础版（FTTR-B）';
 const body = 'word/document.xml';
 const removable = /^(customXml\/|docProps\/)/;
@@ -31,11 +32,13 @@ function unpack(bytes) {
   const names = new Set();
   const files = unzipSync(bytes, { filter(f) {
     total += f.originalSize;
-    requireThat(total <= 3 * 1024 * 1024 && names.size < 80 && !names.has(f.name) &&
-      [0,8].includes(f.compression) && (allowed.test(f.name) || removable.test(f.name) && /^[\w./-]+$/.test(f.name) && !f.name.includes('..')),
-    'Word 文件包含不支持的部件或超出解析限制。');
+    const emptyDirectory = f.originalSize === 0 && /^(_rels|customXml(?:\/_rels)?|docProps|word(?:\/(?:_rels|media|theme))?)\/$/.test(f.name);
+    requireThat(total <= 3 * 1024 * 1024 && names.size < 80,'Word 展开后超过 3 MiB 或部件达到 80 个，无法解析。');
+    requireThat(!names.has(f.name) && [0,8].includes(f.compression) &&
+      (emptyDirectory || allowed.test(f.name) || removable.test(f.name) && /^[\w./-]+$/.test(f.name) && !f.name.includes('..')),
+    'Word 文件包含不支持的部件、重复条目或压缩方式。');
     names.add(f.name);
-    return !removable.test(f.name);
+    return !emptyDirectory && !removable.test(f.name);
   } });
   requireThat(files[body] && files['_rels/.rels'] && files['[Content_Types].xml'], '不是受支持的 Word 文档。');
   for (const [path, bytes] of Object.entries(files)) {
@@ -117,19 +120,30 @@ const inputs = [['extra_credit_code','统一社会信用代码',true],['extra_in
   ['job_title','经办人职务'],['fax','传真'],['existing_line','在用宽带号码（选择在用宽带时必填）'],['paid_count','收费从设备数量（订购时必填）'],
   ['security_name','信息安全责任人姓名',true],['security_role','信息安全责任人职务',true],['security_phone','信息安全责任人联系电话',true],
   ['service_use','业务用途',true],['delegate_company','代办单位'],['delegate_credit_code','代办单位信用代码'],['delegate_name','代办员工'],['delegate_id','代办员工身份证号']];
-export const controls = { inputs, groups: groups.map(([key,label,required,items])=>({key:'choice_'+key,label,required,options:items.map(x=>x[2])})) };
+const octoberGroups = groups.map(group=>{
+  const [key,label,required,items]=group;
+  if(key==='plugin')return [key,'智企硬盘黄金版',required,[[46,0,'开通 20 人／1 TB']]];
+  if(key==='paid'||key==='speed')return [key,label,required,items.map(([i,j,option])=>[i+3,j,option])];
+  return group;
+});
+export function controls(profileId) {
+  return {inputs,groups:(profileId===octoberProfile?octoberGroups:groups).map(([key,label,required,items])=>
+    ({key:'choice_'+key,label,required,options:items.map(x=>x[2])}))};
+}
 
 function profileDocument(files) {
   const doc = parse(files[body]), p = all(doc,W,'p');
-  requireThat(p.length === 296 && compact(p[1]).startsWith('智云上海专线基础版(FTTR-B)套餐申请登记表(2026/A)') &&
-    [[8,'企业规模'],[10,'计算机数量'],[28,'账单地址'],[33,'付款方式'],[36,'基础套餐申请信息'],[41,'套餐类型'],[273,'授权委托书']]
+  const october=p.length===303;
+  const anchors=october?[[45,'智企硬盘黄金版'],[73,'商企全光网从设备'],[76,'上行升速包'],[101,'经办人身份证号码'],[255,'信息安全责任人'],[281,'授权委托书']]:[[273,'授权委托书']];
+  requireThat((october || p.length===296) && compact(p[1]).startsWith('智云上海专线基础版(FTTR-B)套餐申请登记表(2026/A)') &&
+    [[8,'企业规模'],[10,'计算机数量'],[28,'账单地址'],[33,'付款方式'],[36,'基础套餐申请信息'],[41,'套餐类型'],...anchors]
       .every(([i,s])=>compact(p[i]).includes(s)) && primary.every(([i,,label])=>compact(p[i-1]).includes(label)),
-    '此版本仅支持智云上海专线基础版（FTTR-B）2026/A 不带语音原表或占位符模板。');
-  return {doc,p};
+    '无法确认 Word 版式。仅支持智云上海专线基础版（FTTR-B）不带语音的 5 月版和 10 月 21 日版。');
+  return {doc,p,october};
 }
 
 export function analyzeCarrier(bytes) {
-  const files = unpack(bytes), {doc,p} = profileDocument(files);
+  const files = unpack(bytes), {doc,p,october} = profileDocument(files);
   const rateRows = [39,40].map(i=>Array.from(compact(p[i]).matchAll(/[□■☐☑]拨号(\d+M\/\d+M)\((\d+(?:\.\d{1,2})?)元\/(月|年|2年)\/线\)/g)));
   const rates = rateRows.flat().map((m,index)=>({
     key: String(index), bandwidth: m[1], amount: Number(m[2]).toFixed(2), cycle: m[3]
@@ -139,8 +153,11 @@ export function analyzeCarrier(bytes) {
   '未能唯一定位三种基础资费，请核对 Word 原表。');
   for (const [i,key] of primary) {
     const n = text(p[i]);
-    requireThat(n.trim(),'原表缺少可识别的示例字段，请使用已转换模板。');
-    if (n !== token(key)) replace(p[i],0,n.length,token(key));
+    if (!n.trim() && october) append(p[i],token(key));
+    else {
+      requireThat(n.trim(),'原表缺少可识别的示例字段，请使用已转换模板。');
+      if (n !== token(key)) replace(p[i],0,n.length,token(key));
+    }
   }
   for (const [i,key,prefix] of [[23,'job_title',''],[27,'fax',''],[30,'billing_address','：'],[34,'bank_account',' ']]) {
     if (!text(p[i]).includes(token(key))) {
@@ -149,28 +166,37 @@ export function analyzeCarrier(bytes) {
       append(p[i],prefix+token(key));
     }
   }
-  red(p[98],['id_number']); red(p[248],['security_name','security_role','security_phone']);
-  red(p[276],['company_name','extra_credit_code','service_type','application_type','service_use','contact_name','id_number']);
-  for (const [i,keys,pattern] of [[280,['delegate_company','delegate_credit_code','delegate_name','delegate_id'],/_+/g],
-    [109,['sign_y','sign_m','sign_d'],/ +(?=[年月日])/g],[285,['principal_y','principal_m','principal_d'],/ +(?=[年月日])/g],
-    [294,['delegate_y','delegate_m','delegate_d'],/ +(?=[年月日])/g],[42,['existing_line'],/_+/g],[72,['paid_count'],/_+/g]]) {
+  const authKeys=['company_name','extra_credit_code','service_type','application_type','service_use','contact_name','id_number'];
+  const securityKeys=['security_name','security_role','security_phone'];
+  if(october){
+    if(!text(p[101]).includes(token('id_number')))append(p[101],token('id_number'));
+    if(!text(p[256]).includes(token('security_phone')))append(p[256],token('security_phone'));
+  }else{
+    red(p[98],['id_number']); red(p[248],securityKeys); red(p[276],authKeys);
+  }
+  const blankFields=october?[[256,securityKeys.slice(0,2),/ {2,}/g],[284,authKeys,/ {2,}/g]]:[];
+  for (const [i,keys,pattern] of [[october?287:280,['delegate_company','delegate_credit_code','delegate_name','delegate_id'],/_+/g],
+    [october?112:109,['sign_y','sign_m','sign_d'],/ +(?=[年月日])/g],[october?292:285,['principal_y','principal_m','principal_d'],/ +(?=[年月日])/g],
+    [october?301:294,['delegate_y','delegate_m','delegate_d'],/ +(?=[年月日])/g],[42,['existing_line'],/_+/g],[october?75:72,['paid_count'],/_+/g],...blankFields]) {
     if (keys.every(k=>text(p[i]).includes(token(k)))) continue;
-    const matches = [...text(p[i]).matchAll(pattern)].slice(-keys.length);
+    const found = [...text(p[i]).matchAll(pattern)];
+    const matches = keys[0].endsWith('_y') ? found.slice(-3) : found;
     requireThat(matches.length===keys.length,'原表空白位置无法确认。');
     matches.map((m,j)=>[m.index,m.index+m[0].length,keys[j]]).reverse().forEach(([a,b,k])=>replace(p[i],a,b,token(k)));
   }
   for (const t of wt(doc)) t.textContent = t.textContent.replace(glyphs,'□');
   files[body] = serialize(doc);
   const tags = [...new Set(wt(doc).flatMap(t=>[...t.textContent.matchAll(/\{\{([a-z_]+)\}\}/g)].map(m=>m[1])))];
-  return {profile,name,rates,tags,file:zipSync(files,{level:6})};
+  return {profile:october?octoberProfile:profile,name:october?name+'（10 月 21 日版）':name,revision:october?'2026-10-21':'2026/A',rates,tags,file:zipSync(files,{level:6})};
 }
 
 export function renderCarrier(bytes, customer, rate) {
-  const files = unpack(bytes), {doc,p} = profileDocument(files);
+  const files = unpack(bytes), {doc,p,october} = profileDocument(files);
+  requireThat(rate.carrier_profile===(october?octoberProfile:profile),'套餐与 Word 版式不一致。');
   const marks = new Map();
   const select = (i,j) => marks.set(i,[...(marks.get(i)||[]),j]);
   const value = key => typeof customer[key] === 'string' ? customer[key].trim() : '';
-  for (const [key,label,required,items] of groups) {
+  for (const [key,label,required,items] of october?octoberGroups:groups) {
     const c = value('choice_'+key);
     requireThat(!required || c,'请选择'+label+'。');
     if (c) { requireThat(/^\d$/.test(c) && items[Number(c)],'请核对'+label+'。'); select(...items[Number(c)]); }
@@ -181,7 +207,7 @@ export function renderCarrier(bytes, customer, rate) {
   requireThat([0,1,2].includes(rateIndex),'套餐资费无法确认。');
   select(rateIndex===2?40:39,rateIndex===2?0:rateIndex);
   for (const [i,positions] of marks) {
-    if (i === 30 || i === 34) {
+    if (i === 30 || i === 34 || october && (i === 29 || i === 35)) {
       const num = all(p[i],W,'numPr')[0]; requireThat(num,'空框编号已变化。'); num.remove();
       const r=doc.createElementNS(W,'w:r'), t=doc.createElementNS(W,'w:t');
       t.setAttributeNS(xmlSpace,'xml:space','preserve'); t.textContent='■ '; r.append(t);
