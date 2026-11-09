@@ -1,5 +1,5 @@
 import { catalog } from './data.mjs';
-import { checkTariffMapping, sampleMapping, voiceVersion, FormError, insist, labels, match, tariffs, validateCustomer, validateMapping, version, workDashboard } from './rules.mjs';
+import { checkTariffMapping, sampleMapping, voiceVersion, FormError, insist, labels, match, tariffs, validateCustomer, validateMapping, version, dashboardPeriod, workDashboard } from './rules.mjs';
 import { mime, renderWord } from './word.mjs';
 import sample from './sample.json' with {type:'json'};
 
@@ -265,12 +265,12 @@ export async function handleForms(req,env) {
       return list(rows.results.map(r=>JSON.parse(r.snapshot)));
     }
     if(path==='/forms/dashboard' && method==='GET'){
-      const identity=accounts[actor];
+      const identity=accounts[actor], range=dashboardPeriod(url.searchParams);
       const query=identity.role==='admin' ?
         db.prepare('SELECT snapshot FROM qa_records WHERE tenant=? ORDER BY rowid DESC').bind(tenant) :
         db.prepare('SELECT snapshot FROM qa_records WHERE tenant=? AND actor=? ORDER BY rowid DESC').bind(tenant,actor);
       const rows=await query.all();
-      return json(workDashboard(identity,Object.values(accounts),rows.results.map(r=>JSON.parse(r.snapshot))));
+      return json(workDashboard(identity,Object.values(accounts),rows.results.map(r=>JSON.parse(r.snapshot)),range));
     }
     const boardRecord=/^\/forms\/dashboard\/records\/([\w-]+)\/file$/.exec(path);
     if(boardRecord && method==='GET'){

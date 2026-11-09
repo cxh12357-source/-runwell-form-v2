@@ -149,6 +149,8 @@ test('免登录运行：拒绝缺项、生成 Word、刷新后下载、上传及
   const staffB=await make();
   switchDemoAccount('admin');
   assert.deepEqual((await dashboard()).records.map(r=>r.id),[staffB.id,staffA.id]);
+  assert.equal((await result(call('/dashboard?period=all'))).records.length,2);
+  assert.deepEqual((await result(call('/dashboard?period=week&offset=1'))).records,[]);
   assert.equal((await boardFile(staffA.id)).status,200);
   assert.equal((await boardFile(staffB.id)).status,200);
   globalThis.indexedDB = new IDBFactory();

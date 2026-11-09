@@ -61,3 +61,5 @@ Demo 模板列表返回 `imported_at`（UTC ISO 8601）；已有模板没有录�
 ### 工作看板
 联调模式的 `GET /forms/dashboard` 返回 `scope`（team / self）、员工统计和生成记录。只有管理员能读取本工作区全部账号的记录，员工仅能读取自己的记录。报价还没有业务记录，`quote_count` 返回 null。成功生成一次计一次，幂等重试不重复计数。
 `GET /forms/dashboard/records/{id}/file` 按相同权限提供 Word 文件；个人历史接口仍只返回本人的记录。静态 Demo 的身份切换用于虚构数据验收，数据仅存于当前浏览器。
+
+看板默认本周（周一至周日，上海时间）。查询可传 `period=week|month|all|custom`，周/月可传 `offset`（0 表示本期、1 表示上一期），自定义日期传 `from`、`to`（YYYY-MM-DD，含结束日）。响应的 `range` 返回实际统计区间。列表与汇总使用同一区间，打开明细文件仍按账号权限核验。

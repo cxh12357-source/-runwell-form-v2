@@ -39,3 +39,12 @@
 .dashboard-summary td { padding: 14px; }
 .demo-account { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .demo-account select { width: auto; }
+
+.dashboard-toolbar, .dashboard-custom { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; margin: 12px 0; }
+.dashboard-toolbar[hidden], .dashboard-custom[hidden] { display: none; }
+.dashboard-toolbar button, .dashboard-employee { border: 1px solid #dce4ee; border-radius: 7px; background: white; color: #214f86; padding: 7px 12px; font: inherit; cursor: pointer; }
+.dashboard-toolbar button[aria-pressed="true"], .dashboard-employee[aria-pressed="true"] { background: #eaf1fb; border-color: #b4cae5; font-weight: 650; }
+.dashboard-toolbar button:disabled { opacity: .5; cursor: default; }
+.dashboard-range { margin: 16px 0 0; }
+.dashboard-total { margin: 8px 0; color: #52677d; }
+.dashboard-total strong { color: #183f6c; font-size: 26px; }

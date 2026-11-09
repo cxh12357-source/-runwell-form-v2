@@ -100,9 +100,48 @@ export function validateCustomer(customer, mapping, tariff) {
   return Object.fromEntries(Object.entries(mapping).map(([tag, key]) => [tag, values[key]]));
 }
 
-export function workDashboard(actor, roster, records) {
+const dashboardDay=86400000, shanghaiOffset=8*3600000;
+const dayLabel=milliseconds=>new Date(milliseconds).toISOString().slice(0,10);
+function parseDashboardDay(value) {
+  insist(typeof value==='string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && value>='1900-01-01','请选择有效的起止日期。',400);
+  const day=Date.parse(value+'T00:00:00Z');
+  insist(Number.isFinite(day) && dayLabel(day)===value,'请选择有效的起止日期。',400);
+  return day;
+}
+export function dashboardPeriod(query=new URLSearchParams(), now=Date.now()) {
+  const period=query.get('period') ?? 'week', rawOffset=query.get('offset') ?? '0';
+  insist(['week','month','all','custom'].includes(period),'请选择有效的统计周期。',400);
+  insist(/^(0|[1-9]\d{0,2})$/.test(rawOffset) && Number(rawOffset)<=520,'请选择有效的往期范围。',400);
+  const offset=Number(rawOffset);
+  if(period==='all')return {period,offset:0,from:null,to:null};
+  let start,end;
+  if(period==='custom'){
+    start=parseDashboardDay(query.get('from')); end=parseDashboardDay(query.get('to'));
+    insist(start<=end,'开始日期不能晚于结束日期。',400);
+  } else {
+    const today=new Date(now+shanghaiOffset);
+    const y=today.getUTCFullYear(), m=today.getUTCMonth(), d=today.getUTCDate();
+    if(period==='week'){
+      const monday=(today.getUTCDay()+6)%7;
+      start=Date.UTC(y,m,d-monday-offset*7); end=start+6*dashboardDay;
+    } else {
+      start=Date.UTC(y,m-offset,1); end=Date.UTC(y,m-offset+1,1)-dashboardDay;
+    }
+  }
+  return {period,offset,from:dayLabel(start),to:dayLabel(end)};
+}
+
+export function workDashboard(actor, roster, records, range=dashboardPeriod()) {
+  if(range.from){
+    const start=Date.parse(range.from+'T00:00:00+08:00');
+    const end=Date.parse(range.to+'T00:00:00+08:00')+dashboardDay;
+    records=records.filter(record=>{
+      const time=Date.parse(record.created_at);
+      return time>=start && time<end;
+    });
+  }
   const admin=actor.role==='admin';
   const counts=new Map((admin?roster:[actor]).map(person=>[person.id,0]));
   for(const record of records) counts.set(record.created_by,(counts.get(record.created_by)||0)+1);
-  return {scope:admin?'team':'self', employees:[...counts].map(([id,forms_count])=>({id,forms_count,quote_count:null})), records};
+  return {scope:admin?'team':'self', range, employees:[...counts].map(([id,forms_count])=>({id,forms_count,quote_count:null})), records};
 }

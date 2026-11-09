@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { createApp } from '../backend/app.mjs';
 import { openStore } from '../backend/modules/forms/preview/store.mjs';
 import { previewRoutes } from '../backend/modules/forms/preview/http.mjs';
-import { tariffs, version, defaultMapping } from '../backend/modules/forms/preview/rules.mjs';
+import { tariffs, version, defaultMapping, dashboardPeriod, workDashboard } from '../backend/modules/forms/preview/rules.mjs';
 
 let dir, filename, server, store, base;
 const actors = new Map(['员工A', '员工B', '管理员'].map((id, index) =>
@@ -223,9 +223,29 @@ test('看板统计按账号隔离，管理员可查看和下载全员表单', as
   assert.equal(team.employees.find(person=>person.id==='员工B').forms_count,team.records.filter(row=>row.created_by==='员工B').length);
   assert.ok(team.records.some(row=>row.id===a.id));
   assert.ok(team.records.some(row=>row.id===b.id));
+  const archived=await result(call('/dashboard?period=custom&from=2000-01-01&to=2000-01-31',admin));
+  assert.deepEqual(archived.records,[]);
+  assert.ok(archived.employees.every(person=>person.forms_count===0));
+  assert.equal((await call('/dashboard?period=custom&from=2026-02-30&to=2026-03-01',admin)).status,400);
   const file='/dashboard/records/'+b.id+'/file';
   assert.equal((await call(file,staff)).status,404);
   assert.equal((await call(file,null)).status,401);
   assert.deepEqual(await getBytes(call(file,admin)),await getBytes(call(file,other)));
   assert.equal((await call('/records/'+b.id+'/file',admin)).status,404);
+});
+
+test('看板按上海时间切分周和月，并保留自定义结束日全天', () => {
+  const query=search=>new URLSearchParams(search);
+  const now=Date.parse('2026-11-08T16:00:00Z');
+  assert.deepEqual(dashboardPeriod(query('period=week'),now),{period:'week',offset:0,from:'2026-11-09',to:'2026-11-15'});
+  assert.deepEqual(dashboardPeriod(query('period=week&offset=1'),now),{period:'week',offset:1,from:'2026-11-02',to:'2026-11-08'});
+  assert.deepEqual(dashboardPeriod(query('period=month&offset=1'),now),{period:'month',offset:1,from:'2026-10-01',to:'2026-10-31'});
+  const actor={id:'A',role:'staff'};
+  const records=['2026-11-08T15:59:59Z','2026-11-08T16:00:00Z','2026-11-09T15:59:59Z','2026-11-09T16:00:00Z']
+    .map((created_at,id)=>({id,created_at,created_by:'A'}));
+  const custom=dashboardPeriod(query('period=custom&from=2026-11-09&to=2026-11-09'),now);
+  const result=workDashboard(actor,[actor],records,custom);
+  assert.deepEqual(result.records.map(row=>row.id),[1,2]);
+  assert.equal(result.employees[0].forms_count,2);
+  assert.equal(workDashboard(actor,[actor],records,dashboardPeriod(query('period=all'),now)).records.length,4);
 });
