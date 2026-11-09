@@ -3,6 +3,7 @@ import initSql from 'sql.js';
 import wasmBinary from 'sql.js/dist/sql-wasm.wasm';
 import { handleForms } from 'runwell:acceptance';
 import * as carrier from './carrier.mjs';
+import * as reviewed from './reviewed-integration.mjs';
 
 const name = 'runwell-browser-demo-v1';
 const limit = 32 * 1024 * 1024;
@@ -82,7 +83,7 @@ export async function localFetch(path, options = {}) {
           delete: key => files.delete(key)
         };
         let migrated=false;
-        const env = { DB: database(sql), BUCKET: bucket, DEMO_IMPORT: {...carrier,markMigrated:()=>{migrated=true;}} };
+        const env = { DB: database(sql), BUCKET: bucket, DEMO_IMPORT: {...carrier,...reviewed,markMigrated:()=>{migrated=true;}} };
         const headers = new Headers(options.headers);
         // The marker and demo session live entirely inside the browser; never forward them.
         headers.set('oai-authenticated-user-id', clientId);

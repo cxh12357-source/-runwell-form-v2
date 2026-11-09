@@ -62,9 +62,6 @@ const demoPlugin = {
         contents = replace(contents, "  root.querySelector('#forms-exit').onclick = () => { setToken(''); refresh(); };", '');
         contents = replace(contents, "      if (error.status !== 401) throw error;\n      setToken('');", '      throw error;');
       } else if (path.endsWith('generate.js')) {
-        contents = 'import { reviewedPanel, bindReviewed } from "../../../demo/reviewed-ui.mjs";\n' + contents;
-        contents = replace(contents, "</form><div id=\"generated\"></div>';", "</form><div id=\"generated\"></div>' + reviewedPanel();");
-        contents = replace(contents, "  const form = root.querySelector('#generate-form');", "  bindReviewed(root);\n  const form = root.querySelector('#generate-form');");
         contents = replace(contents, '生成成功，文件已保存到此账号的历史记录。', '生成成功，文件已保存到当前浏览器的历史记录。');
       } else {
         contents = replace(contents, '请检查本地服务是否运行，然后重试。', '请使用新版浏览器，确认已允许本站保存数据，然后重试。');

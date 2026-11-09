@@ -13,12 +13,12 @@ const uuid = s => typeof s==='string' && /^[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{
 const isObject = v => v!==null && typeof v==='object' && !Array.isArray(v);
 const signature = async text => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text))),v=>v.toString(16).padStart(2,'0')).join('');
 const resultChanges = r => r.meta.changes;
-async function body(req) {
+async function body(req,limit=750000) {
   insist(req.headers.get('content-type')?.split(';')[0]==='application/json','请提交 JSON 数据。',415);
   const reader=req.body?.getReader();insist(reader,'缺少请求内容。',400);
   let size=0;const chunks=[];
   for(;;) {const {done,value}=await reader.read();if(done)break;
-    size+=value.length;if(size>750000){await reader.cancel();throw new FormError('上传内容过大。',413);}chunks.push(value);}
+    size+=value.length;if(size>limit){await reader.cancel();throw new FormError('上传内容过大。',413);}chunks.push(value);}
   let data;
   try{data=JSON.parse(await new Blob(chunks).text());}catch{throw new FormError('JSON 内容无效。',400);}
   insist(isObject(data),'请求内容格式错误。',400);return data;
@@ -43,9 +43,14 @@ async function candidates(selection,db,tenant,plugin){
   const chosen=plans.find(t=>t.id===selection.tariff_id);
   const matching=chosen?.template_id ? rows.map(t=>t.id===chosen.template_id?{...t,tariff_id:chosen.id}:t) : rows;
   const res=match(selection,matching,plans);
+  if(chosen?.reviewed_id && res.basis) res.basis=[chosen.name,...(chosen.cycle==='—'?[]:[chosen.cycle+'付']),...(chosen.amount==='—'?[]:[chosen.amount+' 元/线'])];
   for(const c of res.candidates){
     c.extra_fields=[...new Set(Object.values(rows.find(t=>t.id===c.id).mapping).filter(k=>k.startsWith('extra_')))];
     const profile=plans.find(t=>t.id===selection.tariff_id)?.carrier_profile;
+    if(chosen?.reviewed_id && c.id===chosen.template_id){
+      c.reviewed_controls=plugin.reviewedControls(chosen.reviewed_id);
+      c.extra_fields=[...c.reviewed_controls.inputs.map(x=>x[0]),...c.reviewed_controls.groups.map(x=>x.key),...(c.reviewed_controls.blank?[]:['manual_billing_ack'])];
+    }
     if(profile && c.id.startsWith('carrier-')){
       c.carrier_controls=plugin.controls(profile);
       c.extra_fields=[...c.carrier_controls.inputs.map(x=>x[0]),...c.carrier_controls.groups.map(x=>x.key)];
@@ -107,8 +112,14 @@ async function generate(data,db,bucket,tenant,actor,plugin) {
   const tariff=(await directory(db,tenant,plugin)).find(t=>t.id===selection.tariff_id);
   const mapping=JSON.parse(t.mapping);
   const bytes=await bytesFor(bucket,t.object_key,t.tariff_id);
-  let file;
-  if(tariff.carrier_profile && template_id.startsWith('carrier-')){
+  let file, review;
+  if(tariff.reviewed_id && template_id===tariff.template_id){
+    try {
+      const output=await plugin.generateReviewed(tariff,bytes,customer);
+      file=output.file;
+      review=[...(output.manualActions||[]),...(output.unmappedFields||[])];
+    } catch(error) { throw new FormError(error.message); }
+  } else if(tariff.carrier_profile && template_id.startsWith('carrier-')){
     validateCustomer(customer,{},tariff);
     try { file=plugin.renderCarrier(bytes,customer,tariff); }
     catch(error) { throw new FormError(error.message); }
@@ -116,7 +127,7 @@ async function generate(data,db,bucket,tenant,actor,plugin) {
   const id=crypto.randomUUID(), key='records/'+tenant+'/'+id;
   const snapshot={id,created_by:accounts[actor].id,created_at:new Date().toISOString(),status:'generated',
     business_id:tariff.business_id,business_version_id:tariff.business_version_id,business_attribute:tariff.business_attribute,
-    tariff,template:{id:t.id,name:t.name,revision:t.revision}};
+    tariff,template:{id:t.id,name:t.name,revision:t.revision},...(review?{review}:{})};
   await bucket.put(key,file);
   // Compare the active set inside the same statement that inserts the record.
   const activeIds=matches.candidates.map(c=>c.id).sort();
@@ -156,6 +167,32 @@ async function consolidateCarrier(db,bucket,tenant,plugin){
     for(const t of rows)if(t.id!==keep.id)await bucket.delete(t.object_key);
     plugin.markMigrated();
   }
+}
+
+async function importTemplate(data,db,bucket,tenant,plugin,save) {
+  insist(typeof data.file==='string' && data.file.length>0 && data.file.length<=Math.ceil(plugin.reviewedLimit/3)*4,'请选择 10 MB 以内的 DOCX。');
+  let bytes;
+  try {bytes=Uint8Array.from(atob(data.file),c=>c.charCodeAt(0));}
+  catch {throw new FormError('Word 文件编码无效。');}
+  const plan=await plugin.identifyReviewed(bytes);
+  if(!plan){
+    insist(bytes.length<=524288,'此文件与已核验的空白原表不一致；普通智能转换仅支持 512 KiB 以内的文件。');
+    return importCarrier(data,db,bucket,tenant,plugin,save);
+  }
+  const {id,name,revision,rates}=plugin.reviewedInfo(plan);
+  if(!save)return json({reviewed:true,name,revision,rates});
+  const existing=await db.prepare('SELECT id FROM qa_templates WHERE tenant=? AND id=?').bind(tenant,id).first();
+  if(existing)return json({id,duplicate:true});
+  const key='templates/'+tenant+'/'+id;
+  await bucket.put(key,bytes);
+  try {
+    await db.batch([
+      ...rates.map(rate=>db.prepare('INSERT INTO demo_tariffs(tenant,id,data) VALUES(?,?,?)').bind(tenant,rate.id,JSON.stringify(rate))),
+      db.prepare('INSERT INTO qa_templates(tenant,id,tariff_id,name,revision,active,mapping,object_key,imported_at) VALUES(?,?,?,?,?,0,?,?,?)')
+        .bind(tenant,id,id,name,revision,'{}',key,new Date().toISOString())
+    ]);
+  } catch(error){await bucket.delete(key);throw error;}
+  return json({id,duplicate:false},201);
 }
 
 async function importCarrier(data,db,bucket,tenant,plugin,save) {
@@ -203,7 +240,7 @@ export async function handleForms(req,env) {
     }
     if(path==='/forms/mode' && method==='GET')return json({preview:true,hosted:true});
     if(path==='/health' && method==='GET')return json({status:'ok',mode:'hosted-acceptance'});
-    if(path==='/catalog' && method==='GET')return json({...catalog,versions:[...catalog.versions,version,voiceVersion]});
+    if(path==='/catalog' && method==='GET')return json({...catalog,versions:[...catalog.versions,version,voiceVersion,...(env.DEMO_IMPORT?.reviewedVersions||[])]});
     insist(env.DB && env.BUCKET,'验收存储尚未就绪。',503);
     const db=env.DB, bucket=env.BUCKET, plugin=env.DEMO_IMPORT;
     if(path==='/forms/test-session' && method==='POST')return await startSession(req,db,tenant,plugin);
@@ -240,7 +277,7 @@ export async function handleForms(req,env) {
         return json({removed:true});
       }
       if(plugin && method==='POST' && ['/forms/templates/inspect','/forms/templates/import'].includes(path))
-        return await importCarrier(await body(req),db,bucket,tenant,plugin,path.endsWith('/import'));
+        return await importTemplate(await body(req,Math.ceil(plugin.reviewedLimit/3)*4+8192),db,bucket,tenant,plugin,path.endsWith('/import'));
       if(path==='/forms/templates' && method==='GET')return list(await templates(db,tenant,Boolean(plugin)));
       if(path==='/forms/templates' && method==='POST')return await upload(await body(req),db,bucket,tenant,plugin);
       const item=/^\/forms\/templates\/([\w-]+)(\/file)?$/.exec(path);

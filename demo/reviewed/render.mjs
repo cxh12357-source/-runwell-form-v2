@@ -13,6 +13,12 @@ const dependencies={sax,unzipSync,zipSync};
 export const reviewedCatalog=businessCatalog.filter(({id})=>Object.hasOwn(specs,id));
 export const reviewedLimit=10_000_000;
 
+export async function identifyReviewed(bytes) {
+  if(!bytes.length || bytes.length>reviewedLimit) return null;
+  const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
+  return reviewedCatalog.find(plan=>specs[plan.id].sha256===hash) || null;
+}
+
 export async function renderReviewed(id,bytes,values) {
   if(!Object.hasOwn(specs,id)) throw new Error('请选择已核验的原表。');
   if(!(bytes instanceof Uint8Array) || !bytes.length || bytes.length>reviewedLimit) throw new Error('请选择 10 MB 以内的 Word 原表。');

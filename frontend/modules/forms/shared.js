@@ -30,7 +30,7 @@ function classification(controls, catalog, tariffs) {
   }
   function setTariffs() {
     const rows = tariffs.filter(t => t.business_id === biz.value && t.business_version_id === version.value &&
-      t.business_attribute === attr.value).map(t => ({ id: t.id, name: t.name + ' · ' + t.bandwidth + ' · ' + t.amount + ' 元/' + t.cycle }));
+      t.business_attribute === attr.value).map(t => ({ id: t.id, name: t.reviewed_id ? [t.name,t.cycle==='—'?'':t.cycle+'付',t.amount==='—'?'':t.amount+' 元/线'].filter(Boolean).join(' · ') : t.name + ' · ' + t.bandwidth + ' · ' + t.amount + ' 元/' + t.cycle }));
     updateSelect(tariff, rows, attr.value ? '选择已核对的套餐' : '请先选择属性');
   }
   function setAttributes() {

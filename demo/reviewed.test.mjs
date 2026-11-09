@@ -1,11 +1,6 @@
-import { readdir, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { createHash } from 'node:crypto';
+import { loadReviewedFixtures } from './reviewed-fixtures.mjs';
 import { unzipSync } from 'fflate';
 import { renderReviewed, reviewedCatalog } from './reviewed/render.mjs';
-import plans from './reviewed/business-3-metadata.json' with {type:'json'};
-import ai from './reviewed/business-ai-metadata.json' with {type:'json'};
-import guarantee from './reviewed/business-guarantee-metadata.json' with {type:'json'};
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -24,13 +19,7 @@ test('已核验原表生成入口拒绝未知版式、未核验文件和无效�
 
 const folder=process.env.RUNWELL_REVIEWED_FIXTURES;
 test('用核验原表和虚构资料生成全部 v22 版式', {skip:!folder},async t=>{
-  const found=new Map(), hashes=new Map(Object.entries({...plans,...ai,...guarantee}).map(([k,v])=>[v.sha256,k]));
-  for (const file of await readdir(folder,{recursive:true,withFileTypes:true})){
-    if(!file.isFile() || !file.name.endsWith('.docx') || file.name.startsWith('~')) continue;
-    const bytes=await readFile(join(file.parentPath,file.name));
-    const key=hashes.get(createHash('sha256').update(bytes).digest('hex'));
-    if(key)found.set(key,bytes);
-  }
+  const found=await loadReviewedFixtures(folder);
   for (const {id,cycles} of reviewedCatalog) await t.test(id,async()=>{
     assert.ok(found.has(id),'未找到对应空白原表');
     const data=id==='business-guarantee'?guaranteeValues:{...application,...(cycles.length?{cycle:'year'}:{}),

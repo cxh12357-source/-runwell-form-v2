@@ -4,6 +4,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { strFromU8, unzipSync } from 'fflate';
 import { bundleDemo } from './build.mjs';
 import { tariffs } from '../backend/modules/forms/preview/rules.mjs';
+import { loadReviewedFixtures } from './reviewed-fixtures.mjs';
 
 test('免登录运行：拒绝缺项、生成 Word、刷新后下载、上传及启停、浏览器间隔离，且无业务网络请求', async () => {
   const bundle = await bundleDemo('demo/runtime.mjs');
@@ -79,6 +80,45 @@ test('免登录运行：拒绝缺项、生成 Word、刷新后下载、上传及
   assert.deepEqual(await result(call('/templates')), []);
   assert.deepEqual((await result(call('/workspace'))).tariffs, []);
   assert.equal((await call('/records/' + customRecord.id + '/file')).status, 200);
+  if(process.env.RUNWELL_REVIEWED_FIXTURES){
+    const fixtures=await loadReviewedFixtures(process.env.RUNWELL_REVIEWED_FIXTURES);
+    for(const reviewedId of ['business-200m-no-voice','business-ai-v2-voice','business-guarantee']){
+      const bytes=fixtures.get(reviewedId);
+      assert.ok(bytes);
+      const sourceFile={file:bytes.toString('base64'),filename:'没有版式信息.docx'};
+      const inspected=await result(call('/templates/inspect','POST',sourceFile));
+      assert.ok(inspected.reviewed);
+      const added=await result(call('/templates/import','POST',sourceFile),201);
+      assert.equal((await result(call('/templates/import','POST',sourceFile))).duplicate,true);
+      assert.equal((await result(call('/templates'))).filter(t=>t.id===added.id).length,1);
+      const planRates=(await result(call('/workspace'))).tariffs.filter(t=>t.template_id===added.id);
+      assert.equal(planRates.length,reviewedId.includes('200m')?3:1);
+      const rate=planRates.find(r=>r.reviewed_cycle==='year')||planRates[0];
+      const chosen={...rate,tariff_id:rate.id};
+      const matchReviewed=()=>result(call('/match','POST',{selection:chosen}));
+      assert.equal((await matchReviewed()).status,'not_found');
+      await result(call('/templates/'+added.id,'PATCH',{active:true}));
+      const matched=await matchReviewed();
+      assert.equal(matched.status,'unique');
+      const blank=reviewedId==='business-guarantee';
+      assert.equal(Boolean(matched.candidates[0].reviewed_controls.blank),blank);
+      const common={company_name:'虚构测试企业',extra_credit_code:'000000000000000000'};
+      const fields=blank?{guarantee_company:common.company_name,guarantee_credit:common.extra_credit_code,guarantor_name:'虚构担保人',
+        guarantor_id:'000000000000000000',guarantor_address:'虚构路一号',guarantor_phone:'10000000000'}:
+        {...customer,...common,email:'a@b.invalid',extra_industry:'物流',extra_company_size:'31-80人',extra_computer_count:'16-40台',
+          install_zip:'200001',billing_zip:'200002',application_date:'2026-11-09',service_use:'办公测试',choice_billing:'0',service_type_choice:'1'};
+      const payload={selection:chosen,template_id:added.id,match_token:matched.match_token,request_id:crypto.randomUUID(),customer:fields};
+      const record=await result(call('/generate','POST',payload));
+      assert.ok(record.review.includes(blank?'guarantee_signature':'bank_name'));
+      assert.ok((await result(call('/records'))).some(r=>r.id===record.id));
+      const output=await call('/records/'+record.id+'/file');
+      const word=strFromU8(unzipSync(new Uint8Array(await output.arrayBuffer()))['word/document.xml']);
+      assert.match(word,blank?/虚构担保人/:/2026年11月9日/);
+      await result(call('/templates/'+added.id,'DELETE'));
+      assert.equal((await matchReviewed()).status,'not_found');
+      assert.equal((await call('/records/'+record.id+'/file')).status,200);
+    }
+  }
   globalThis.indexedDB = new IDBFactory();
   assert.deepEqual(await result(call('/records')), []);
   assert.equal((await result(call('/templates'))).some(t => t.id === added.id), false);

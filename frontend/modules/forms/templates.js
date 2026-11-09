@@ -4,7 +4,7 @@ import { bindClassification, downloadControl, request, selectors, status, refres
 export function templatesView({ rows, workspace, hosted }) {
   const mapping = Object.fromEntries(Object.keys(workspace.labels).map(key => [key, key]));
   const smart = workspace.smart_import ? '<section class="smart-import" aria-labelledby="smart-title"><h3 id="smart-title">智能导入 Word</h3>' +
-    '<p>支持智云上海专线基础版（FTTR-B）不带语音：5 月版、10 月 21 日版。演示请使用虚构资料。</p>' +
+    '<p>支持已核验的 100M、200M、智云护航 AI 原表及外地公司担保书，也可转换支持的 FTTR-B 模板。请上传空白 Word。</p>' +
     '<div id="smart-drop"><label for="smart-file">把 .docx 文件拖到虚线框内</label><input id="smart-file" type="file" accept=".docx"></div>' +
     '<p class="hint">拖拽没有反应时，可点击「选择文件」，两种方式使用相同的解析流程。</p>' +
     '<p id="smart-status" role="status"></p><div id="smart-preview" aria-live="polite"></div></section><div class="divider"></div><h3>手动上传模板</h3>' : '';
@@ -29,7 +29,7 @@ export function templatesView({ rows, workspace, hosted }) {
       (t.custom ? ' <button type="button" data-delete-open>删除</button><div class="template-delete-confirm" hidden>' +
       '<p>删除「'+esc(t.name)+'」版本 '+esc(t.revision)+'？已生成的 Word 仍可从历史记录下载。</p>' +
       '<button type="button" data-delete-cancel>取消</button> <button type="button" data-delete-confirm="'+esc(t.id)+'">确认删除</button></div>' : '') +
-      '<details><summary>查看映射</summary><pre>' + esc(JSON.stringify(t.mapping, null, 2)) + '</pre></details><div data-template-error aria-live="polite"></div></td></tr>'; }).join('') + '</tbody></table></div>';
+      '<details><summary>'+(tariff?.reviewed_id?'查看填写规则':'查看映射')+'</summary><pre>' + esc(tariff?.reviewed_id?'按已核验的 Word 版式填写；原表不需要自行设置占位符。':JSON.stringify(t.mapping, null, 2)) + '</pre></details><div data-template-error aria-live="polite"></div></td></tr>'; }).join('') + '</tbody></table></div>';
 }
 function readFile(file) {
   return new Promise((resolve, reject) => {
@@ -41,7 +41,7 @@ function readFile(file) {
 }
 export function bindTemplates(root, state) {
   const form = root.querySelector('#template-form');
-  const selection = bindClassification(form, { ...state, workspace: { ...state.workspace, tariffs: state.workspace.tariffs.filter(t=>!t.carrier_profile) } });
+  const selection = bindClassification(form, { ...state, workspace: { ...state.workspace, tariffs: state.workspace.tariffs.filter(t=>!t.carrier_profile && !t.reviewed_id) } });
   if(state.workspace.smart_import) bindSmartImport(root);
   const clearSamples=root.querySelector('#remove-samples');
   if(clearSamples){
@@ -151,8 +151,8 @@ function bindSmartImport(root) {
   async function inspect(files) {
     const ticket=++epoch;
     preview.replaceChildren();
-    if(files.length!==1 || !/\.docx$/i.test(files[0].name) || !files[0].size || files[0].size>524288){
-      tell('请一次选择一份 512 KiB 以内的 DOCX。'); return;
+    if(files.length!==1 || !/\.docx$/i.test(files[0].name) || !files[0].size || files[0].size>10000000){
+      tell('请一次选择一份 10 MB 以内的 DOCX。'); return;
     }
     const filename=files[0].name.normalize('NFKC').replace(/\s+/g,'');
     tell('已收到「'+files[0].name+'」，正在解析 Word…');
@@ -160,6 +160,15 @@ function bindSmartImport(root) {
       const file=await readFile(files[0]);
       const result=await request('/templates/inspect',{method:'POST',data:{file,filename}});
       if(ticket!==epoch || !root.isConnected)return;
+      if(result.reviewed){
+        tell('已核验空白原表。导入并启用后，员工可直接在表单生成页使用。');
+        const rates=result.rates.filter(r=>r.cycle!=='—');
+        preview.innerHTML='<p><strong>'+esc(result.name)+'</strong> · '+esc(result.revision)+'</p>'+
+          (rates.length?'<ul>'+rates.map(r=>'<li>'+esc(r.cycle+'付'+(r.amount==='—'?'':' · '+r.amount+' 元/线'))+'</li>').join('')+'</ul>':'')+
+          '<form><button class="button">导入模板</button></form>';
+        bindConfirm(preview.querySelector('form'),file,filename);
+        return;
+      }
       const fields=[['bandwidth','网速'],['name','套餐名'],['revision','版本'],['voice','语音'],['discount','折扣']];
       const summary='<dl>'+fields.map(([key,label])=>'<dt>'+label+'</dt><dd>'+esc(result.metadata[key]||'待确认')+'</dd>').join('')+'</dl>';
       if(!result.convertible){
@@ -186,20 +195,23 @@ function bindSmartImport(root) {
       const confirm=preview.querySelector('form');
       appendAi(result.metadata,ticket);
       if(confirm.elements.variant)confirm.elements.variant.value=suggested;
+      bindConfirm(confirm,file,filename);
+    } catch(error){if(ticket===epoch && root.isConnected)tell(error.message);}
+  }
+  function bindConfirm(confirm,file,filename){
       confirm.onsubmit=async event=>{
         event.preventDefault();
         const button=confirm.querySelector('button');button.disabled=true;picker.disabled=true;
         try {
           const saved=await request('/templates/import',{method:'POST',data:{file,filename,variant:confirm.elements.variant?.value}});
           if(root.isConnected){
-            const notice=saved.duplicate?'该版式模板已导入，未重复新增。':'已录入一份模板。启用后，员工可在生成表单时选择资费。';
+            const notice=saved.duplicate?'该版式模板已导入，未重复新增。':'已录入一份模板。请在模板目录启用，员工即可在表单生成页选择并匹配。';
             sessionStorage.setItem('runwell-smart-import-notice',notice);
             refresh();
           }
         } catch(error){tell(error.message);}
         finally{button.disabled=false;picker.disabled=false;}
       };
-    } catch(error){if(ticket===epoch && root.isConnected)tell(error.message);}
   }
   const notice=sessionStorage.getItem('runwell-smart-import-notice');
   if(notice){sessionStorage.removeItem('runwell-smart-import-notice');tell(notice);}

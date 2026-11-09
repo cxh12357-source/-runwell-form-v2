@@ -10,16 +10,16 @@ function field(name, title, type = 'text') {
 export function generationShell(content) {
   return '<form id="generate-form">' + selectors() +
     '<button class="button" type="button" id="match">匹配模板</button><div id="match-result"></div>' + content +
-    '<button id="generate" class="button" disabled>确认生成 Word</button></form><div id="generated"></div>';
+    '<p id="generate-hint" class="hint">请先在上方选择套餐或担保书，并匹配一份已启用的模板。</p><button id="generate" class="button" aria-describedby="generate-hint" disabled>确认生成 Word</button></form><div id="generated"></div>';
 }
 
 export function generation(labels) {
-  return generationShell(intakePanel() +
+  return generationShell('<fieldset id="application-fields" class="application-fields">' + intakePanel() +
     '<div class="divider"></div><h3>客户资料</h3><button id="fill-example" type="button">用虚构样例补全空白栏</button><div class="field-grid">' +
     customerFields.map(key => field(key, labels[key], key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text')).join('') +
     '<label>付款方式<select name="payment_method" required><option value="">请选择</option><option value="cash">现金</option><option value="collection">托收</option></select></label></div>' +
     '<fieldset hidden id="bank-fields" disabled><div class="field-grid">' + field('bank_account', labels.bank_account) +
-    field('bank_name', labels.bank_name) + '</div></fieldset><div id="extra" class="field-grid"></div>' + internalPanel());
+    field('bank_name', labels.bank_name) + '</div></fieldset>' + internalPanel() + '</fieldset><div id="extra" class="field-grid"></div>');
 }
 
 export function bindGeneration(root, state) {
@@ -30,11 +30,16 @@ export function bindGeneration(root, state) {
   const extra = root.querySelector('#extra');
   const generate = root.querySelector('#generate');
   const generated = root.querySelector('#generated');
+  const hint = root.querySelector('#generate-hint');
   const bank = root.querySelector('#bank-fields');
+  const application = form.querySelector('#application-fields');
+  const reviewLabels={billing_address:'其他账单地址',bank_name:'开户银行',authorization:'授权委托书',voice_identity:'语音实名资料（如适用）',
+    line_count:'线路数量',service_options:'业务选项',signature:'签字盖章',guarantee_signature:'签字盖章',
+    guarantee_number:'电信业务号码',guarantee_date:'担保日期'};
   let epoch = 0, candidates = [], template = null, matchToken, requestId, busy = false;
   root.querySelector('#fill-example').onclick = () => {
     const fixture = { company_name:'虚构测试企业', install_address:'虚构安装路一号', billing_address:'虚构账单路二号',
-      contact_name:'测试甲乙', phone:'10000000000', id_number:'000000000000000000', email:'fixture@example.invalid' };
+      contact_name:'测试甲乙', phone:'10000000000', id_number:'000000000000000000', email:'a@b.invalid' };
     for (const [key, value] of Object.entries(fixture)) {
       if (!form.elements[key].value) form.elements[key].value = value;
     }
@@ -52,12 +57,18 @@ export function bindGeneration(root, state) {
     template = candidates.find(row => row.id === id);
     const keys = template?.extra_fields ?? [];
     intake.setExtras(keys);
-    const custom=template?.carrier_controls;
+    const reviewed=template?.reviewed_controls;
+    application.hidden=application.disabled=Boolean(reviewed?.blank);
+    const custom=reviewed || template?.carrier_controls;
     extra.innerHTML = custom ? custom.groups.map(g=>'<label>'+esc(g.label)+'<select name="'+esc(g.key)+'" '+(g.required?'required':'')+'>'+options(g.options.map((name,id)=>({name,id})),g.required?'请选择':'不订购')+'</select></label>').join('')+
       custom.inputs.filter(([key])=>!intakeExtraKeys.includes(key)).map(([key,label,required,type])=>'<label>'+esc(label)+'<input type="'+(type==='date'?'date':'text')+'" name="'+esc(key)+'" '+(required?'required':'')+' maxlength="500" autocomplete="off"></label>').join('') :
       keys.filter(k => !intakeExtraKeys.includes(k)).map(k => field(k, '模板必填 · ' + k.slice(6))).join('');
-    form.elements.billing_address.disabled=false;
+    if(reviewed && !reviewed.blank){
+      extra.insertAdjacentHTML('beforeend','<label hidden id="review-billing"><input type="checkbox" name="manual_billing_ack" required disabled> 确认下载后在 Word 中手工填入其他账单地址</label>');
+    }
+    form.elements.billing_address.disabled=Boolean(reviewed && !reviewed.blank);
     generate.disabled = busy || !template;
+    hint.hidden=Boolean(template);
     requestId = undefined;
   }
   function invalidate() {
@@ -72,7 +83,15 @@ export function bindGeneration(root, state) {
   form.addEventListener('change', event => {
     if (['biz','ver','attr','tariff'].includes(event.target.name)) invalidate();
     if (event.target.name === 'candidate') choose(event.target.value);
-    if(event.target.name==='choice_billing')form.elements.billing_address.disabled=event.target.value==='0';
+    if(event.target.name==='choice_billing'){
+      const confirmation=extra.querySelector('#review-billing');
+      form.elements.billing_address.disabled=confirmation?event.target.value!=='1':event.target.value==='0';
+      if(confirmation){
+        confirmation.hidden=event.target.value!=='1';
+        form.elements.manual_billing_ack.disabled=confirmation.hidden;
+        form.elements.manual_billing_ack.checked=false;
+      }
+    }
     if (event.target.name === 'payment_method') {
       bank.disabled = bank.hidden = event.target.value !== 'collection';
       if (bank.disabled) for (const input of bank.querySelectorAll('input')) input.value = '';
@@ -102,7 +121,7 @@ export function bindGeneration(root, state) {
   form.onsubmit = async event => {
     event.preventDefault();
     if (busy || !template) return;
-    const reminder=intake.beforeGenerate();
+    const reminder=template.reviewed_controls?.blank?'':intake.beforeGenerate();
     if(reminder) return status(root, reminder);
     const customer = {};
     for (const [name, value] of new FormData(form)) {
@@ -115,7 +134,8 @@ export function bindGeneration(root, state) {
     try {
       const row = await request('/generate', { method: 'POST', data: { request_id: requestId, match_token: matchToken, template_id: template.id, selection: selected(), customer } });
       status(root, '生成成功，文件已保存到此账号的历史记录。');
-      generated.innerHTML = downloadControl('/records/' + row.id + '/file', '下载已生成的 Word', state.hosted);
+      generated.innerHTML = (row.review?.length ? '<p>下载后请核对版式，并处理：'+esc(row.review.map(key=>reviewLabels[key]||key).join('、'))+'。</p>' : '')+
+        downloadControl('/records/' + row.id + '/file', '下载已生成的 Word', state.hosted);
     } catch (error) {
       status(root, error.message);
       if (error.status === 409) { invalidate(); status(root, error.message); }
