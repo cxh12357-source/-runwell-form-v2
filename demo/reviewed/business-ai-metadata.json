@@ -1,0 +1,398 @@
+{
+  "business-ai-v1": {
+    "sha256": "d901804a17e32746e47ccfcfb6f5d437a1a5857d69719f23af4ef0666d664863",
+    "fields": {
+      "company_name": {
+        "paragraph": 3,
+        "paragraph_sha256": "a27649709811940c0292787537b771d98cf84252ea4b1a99de7a756c01c5c9f7"
+      },
+      "extra_credit_code": {
+        "paragraph": 5,
+        "paragraph_sha256": "629c5e3be3dcfbdcd3445ec9482bd17e5377520c552b456b58cc5e6342d4610c"
+      },
+      "extra_industry": {
+        "paragraph": 7,
+        "paragraph_sha256": "b85a780ba0e5874439d99600390e43a4e28f7a6bfd84b35f0051bfe8f415e5f0"
+      },
+      "install_address": {
+        "paragraph": 13,
+        "paragraph_sha256": "91a9277a8afe9b3cc385c6f29982eb9edd7ebcaefcc4ab116aabe4e30b9c7bc5"
+      },
+      "contact_name": {
+        "paragraph": 17,
+        "paragraph_sha256": "26cb4dd87c6b02c9e5366649c9eef8cd334e6b39b6d511efbe2530f4ba152761"
+      },
+      "id_number": {
+        "paragraph": 19,
+        "paragraph_sha256": "02f5e34831be93494534d4fb52ffbf6118728237dfa18bb2c4c8919bda91e862"
+      },
+      "phone": {
+        "paragraph": 21,
+        "paragraph_sha256": "12bf48d2db2e19e2b0071fb9dabe78447195e281712002b796c21d1004926925"
+      },
+      "email": {
+        "paragraph": 25,
+        "paragraph_sha256": "7b6ab21e22cf6aaf7be6b096dbe07d0251029726025f458c101e234cd11de87d"
+      }
+    },
+    "options": {
+      "extra_company_size": {
+        "paragraph": 9,
+        "paragraph_sha256": "cd48afdcc58eacefd18e4eb448d349e209ab5bbf3364f3a1ae9c0e9ba13c2ab3",
+        "marked": "■",
+        "choices": {
+          "10人以下": {
+            "text": 0,
+            "start": 0,
+            "end": 1,
+            "text_sha256": "7cd4604f43212f3c6a0da915e82de05097aabf90ddd64d21bd4c8df2f0e1add2"
+          },
+          "10-30人": {
+            "text": 0,
+            "start": 9,
+            "end": 10,
+            "text_sha256": "7cd4604f43212f3c6a0da915e82de05097aabf90ddd64d21bd4c8df2f0e1add2"
+          },
+          "31-80人": {
+            "text": 0,
+            "start": 19,
+            "end": 20,
+            "text_sha256": "7cd4604f43212f3c6a0da915e82de05097aabf90ddd64d21bd4c8df2f0e1add2"
+          },
+          "81-200人": {
+            "text": 0,
+            "start": 29,
+            "end": 30,
+            "text_sha256": "7cd4604f43212f3c6a0da915e82de05097aabf90ddd64d21bd4c8df2f0e1add2"
+          },
+          "200人以上": {
+            "text": 0,
+            "start": 39,
+            "end": 40,
+            "text_sha256": "7cd4604f43212f3c6a0da915e82de05097aabf90ddd64d21bd4c8df2f0e1add2"
+          }
+        }
+      },
+      "extra_computer_count": {
+        "paragraph": 11,
+        "paragraph_sha256": "9a1a790dc3f5a5728f6691a4d637d933c01438935d6a1d77b6fe2d78a19933be",
+        "marked": "■",
+        "choices": {
+          "5台及以下": {
+            "text": 0,
+            "start": 0,
+            "end": 1,
+            "text_sha256": "44de30249f34118d9eef1a3e9d1470966ac27c21cd726ba80920707fff1b844d"
+          },
+          "6-15台": {
+            "text": 0,
+            "start": 8,
+            "end": 9,
+            "text_sha256": "44de30249f34118d9eef1a3e9d1470966ac27c21cd726ba80920707fff1b844d"
+          },
+          "16-40台": {
+            "text": 0,
+            "start": 18,
+            "end": 19,
+            "text_sha256": "44de30249f34118d9eef1a3e9d1470966ac27c21cd726ba80920707fff1b844d"
+          },
+          "41-100台": {
+            "text": 0,
+            "start": 28,
+            "end": 29,
+            "text_sha256": "44de30249f34118d9eef1a3e9d1470966ac27c21cd726ba80920707fff1b844d"
+          },
+          "100台以上": {
+            "text": 0,
+            "start": 38,
+            "end": 39,
+            "text_sha256": "44de30249f34118d9eef1a3e9d1470966ac27c21cd726ba80920707fff1b844d"
+          }
+        }
+      }
+    },
+    "abstract_id": "10",
+    "billing_same": {
+      "paragraph": 29,
+      "paragraph_sha256": "e8d0d16350f98a03d58dfaecc78789e046a548eab66ae3170a3130b112a1043c",
+      "text": 0,
+      "text_sha256": "94d64339b99e37d70ef51dc6bcf6ae1bf9e92f814bdd77b831c37d9c80d4214d"
+    },
+    "collection": {
+      "paragraph": 34,
+      "paragraph_sha256": "6cae7cedda299deb288940d2834debea3d27958588c2eff0b1d7182a649946a2",
+      "text": 0,
+      "text_sha256": "acf235c44d13742f7328a440d81e5b4bfea2f47962634d2322dbb474609df8ff"
+    },
+    "cash": {
+      "paragraph": 35,
+      "paragraph_sha256": "9d2d762bcf48874db6e4e434c2e246416e1e41af27e6f3ab4ca684d8e8a89155",
+      "text": 0,
+      "text_sha256": "99d8195d02ddf16c4f9cbf6ae0533e8936e6687bf19c3ea8c98e8069b152547c"
+    }
+  },
+  "business-ai-v2-no-voice": {
+    "sha256": "84375dd778114a9fb7b627e141c3c87b7ae5bcb81a0edf9b830fd8a6caa9747b",
+    "fields": {
+      "company_name": {
+        "paragraph": 3,
+        "paragraph_sha256": "a27649709811940c0292787537b771d98cf84252ea4b1a99de7a756c01c5c9f7"
+      },
+      "extra_credit_code": {
+        "paragraph": 5,
+        "paragraph_sha256": "629c5e3be3dcfbdcd3445ec9482bd17e5377520c552b456b58cc5e6342d4610c"
+      },
+      "extra_industry": {
+        "paragraph": 7,
+        "paragraph_sha256": "b85a780ba0e5874439d99600390e43a4e28f7a6bfd84b35f0051bfe8f415e5f0"
+      },
+      "install_address": {
+        "paragraph": 13,
+        "paragraph_sha256": "91a9277a8afe9b3cc385c6f29982eb9edd7ebcaefcc4ab116aabe4e30b9c7bc5"
+      },
+      "contact_name": {
+        "paragraph": 17,
+        "paragraph_sha256": "26cb4dd87c6b02c9e5366649c9eef8cd334e6b39b6d511efbe2530f4ba152761"
+      },
+      "id_number": {
+        "paragraph": 19,
+        "paragraph_sha256": "02f5e34831be93494534d4fb52ffbf6118728237dfa18bb2c4c8919bda91e862"
+      },
+      "phone": {
+        "paragraph": 21,
+        "paragraph_sha256": "12bf48d2db2e19e2b0071fb9dabe78447195e281712002b796c21d1004926925"
+      },
+      "email": {
+        "paragraph": 25,
+        "paragraph_sha256": "7b6ab21e22cf6aaf7be6b096dbe07d0251029726025f458c101e234cd11de87d"
+      }
+    },
+    "options": {
+      "extra_company_size": {
+        "paragraph": 9,
+        "paragraph_sha256": "cd48afdcc58eacefd18e4eb448d349e209ab5bbf3364f3a1ae9c0e9ba13c2ab3",
+        "marked": "■",
+        "choices": {
+          "10人以下": {
+            "text": 0,
+            "start": 0,
+            "end": 1,
+            "text_sha256": "7cd4604f43212f3c6a0da915e82de05097aabf90ddd64d21bd4c8df2f0e1add2"
+          },
+          "10-30人": {
+            "text": 0,
+            "start": 9,
+            "end": 10,
+            "text_sha256": "7cd4604f43212f3c6a0da915e82de05097aabf90ddd64d21bd4c8df2f0e1add2"
+          },
+          "31-80人": {
+            "text": 0,
+            "start": 19,
+            "end": 20,
+            "text_sha256": "7cd4604f43212f3c6a0da915e82de05097aabf90ddd64d21bd4c8df2f0e1add2"
+          },
+          "81-200人": {
+            "text": 0,
+            "start": 29,
+            "end": 30,
+            "text_sha256": "7cd4604f43212f3c6a0da915e82de05097aabf90ddd64d21bd4c8df2f0e1add2"
+          },
+          "200人以上": {
+            "text": 0,
+            "start": 39,
+            "end": 40,
+            "text_sha256": "7cd4604f43212f3c6a0da915e82de05097aabf90ddd64d21bd4c8df2f0e1add2"
+          }
+        }
+      },
+      "extra_computer_count": {
+        "paragraph": 11,
+        "paragraph_sha256": "9a1a790dc3f5a5728f6691a4d637d933c01438935d6a1d77b6fe2d78a19933be",
+        "marked": "■",
+        "choices": {
+          "5台及以下": {
+            "text": 0,
+            "start": 0,
+            "end": 1,
+            "text_sha256": "44de30249f34118d9eef1a3e9d1470966ac27c21cd726ba80920707fff1b844d"
+          },
+          "6-15台": {
+            "text": 0,
+            "start": 8,
+            "end": 9,
+            "text_sha256": "44de30249f34118d9eef1a3e9d1470966ac27c21cd726ba80920707fff1b844d"
+          },
+          "16-40台": {
+            "text": 0,
+            "start": 18,
+            "end": 19,
+            "text_sha256": "44de30249f34118d9eef1a3e9d1470966ac27c21cd726ba80920707fff1b844d"
+          },
+          "41-100台": {
+            "text": 0,
+            "start": 28,
+            "end": 29,
+            "text_sha256": "44de30249f34118d9eef1a3e9d1470966ac27c21cd726ba80920707fff1b844d"
+          },
+          "100台以上": {
+            "text": 0,
+            "start": 38,
+            "end": 39,
+            "text_sha256": "44de30249f34118d9eef1a3e9d1470966ac27c21cd726ba80920707fff1b844d"
+          }
+        }
+      }
+    },
+    "abstract_id": "14",
+    "billing_same": {
+      "paragraph": 29,
+      "paragraph_sha256": "e8d0d16350f98a03d58dfaecc78789e046a548eab66ae3170a3130b112a1043c",
+      "text": 0,
+      "text_sha256": "94d64339b99e37d70ef51dc6bcf6ae1bf9e92f814bdd77b831c37d9c80d4214d"
+    },
+    "collection": {
+      "paragraph": 34,
+      "paragraph_sha256": "6cae7cedda299deb288940d2834debea3d27958588c2eff0b1d7182a649946a2",
+      "text": 0,
+      "text_sha256": "acf235c44d13742f7328a440d81e5b4bfea2f47962634d2322dbb474609df8ff"
+    },
+    "cash": {
+      "paragraph": 35,
+      "paragraph_sha256": "9d2d762bcf48874db6e4e434c2e246416e1e41af27e6f3ab4ca684d8e8a89155",
+      "text": 0,
+      "text_sha256": "99d8195d02ddf16c4f9cbf6ae0533e8936e6687bf19c3ea8c98e8069b152547c"
+    }
+  },
+  "business-ai-v2-voice": {
+    "sha256": "3d255b1d7686a2acaba9b610937c92ce941587c467f5142523bcec216d74d489",
+    "fields": {
+      "company_name": {
+        "paragraph": 3,
+        "paragraph_sha256": "a27649709811940c0292787537b771d98cf84252ea4b1a99de7a756c01c5c9f7"
+      },
+      "extra_credit_code": {
+        "paragraph": 5,
+        "paragraph_sha256": "629c5e3be3dcfbdcd3445ec9482bd17e5377520c552b456b58cc5e6342d4610c"
+      },
+      "extra_industry": {
+        "paragraph": 7,
+        "paragraph_sha256": "b85a780ba0e5874439d99600390e43a4e28f7a6bfd84b35f0051bfe8f415e5f0"
+      },
+      "install_address": {
+        "paragraph": 13,
+        "paragraph_sha256": "91a9277a8afe9b3cc385c6f29982eb9edd7ebcaefcc4ab116aabe4e30b9c7bc5"
+      },
+      "contact_name": {
+        "paragraph": 17,
+        "paragraph_sha256": "26cb4dd87c6b02c9e5366649c9eef8cd334e6b39b6d511efbe2530f4ba152761"
+      },
+      "id_number": {
+        "paragraph": 19,
+        "paragraph_sha256": "02f5e34831be93494534d4fb52ffbf6118728237dfa18bb2c4c8919bda91e862"
+      },
+      "phone": {
+        "paragraph": 21,
+        "paragraph_sha256": "12bf48d2db2e19e2b0071fb9dabe78447195e281712002b796c21d1004926925"
+      },
+      "email": {
+        "paragraph": 25,
+        "paragraph_sha256": "7b6ab21e22cf6aaf7be6b096dbe07d0251029726025f458c101e234cd11de87d"
+      }
+    },
+    "options": {
+      "extra_company_size": {
+        "paragraph": 9,
+        "paragraph_sha256": "cd48afdcc58eacefd18e4eb448d349e209ab5bbf3364f3a1ae9c0e9ba13c2ab3",
+        "marked": "■",
+        "choices": {
+          "10人以下": {
+            "text": 0,
+            "start": 0,
+            "end": 1,
+            "text_sha256": "7cd4604f43212f3c6a0da915e82de05097aabf90ddd64d21bd4c8df2f0e1add2"
+          },
+          "10-30人": {
+            "text": 0,
+            "start": 9,
+            "end": 10,
+            "text_sha256": "7cd4604f43212f3c6a0da915e82de05097aabf90ddd64d21bd4c8df2f0e1add2"
+          },
+          "31-80人": {
+            "text": 0,
+            "start": 19,
+            "end": 20,
+            "text_sha256": "7cd4604f43212f3c6a0da915e82de05097aabf90ddd64d21bd4c8df2f0e1add2"
+          },
+          "81-200人": {
+            "text": 0,
+            "start": 29,
+            "end": 30,
+            "text_sha256": "7cd4604f43212f3c6a0da915e82de05097aabf90ddd64d21bd4c8df2f0e1add2"
+          },
+          "200人以上": {
+            "text": 0,
+            "start": 39,
+            "end": 40,
+            "text_sha256": "7cd4604f43212f3c6a0da915e82de05097aabf90ddd64d21bd4c8df2f0e1add2"
+          }
+        }
+      },
+      "extra_computer_count": {
+        "paragraph": 11,
+        "paragraph_sha256": "9a1a790dc3f5a5728f6691a4d637d933c01438935d6a1d77b6fe2d78a19933be",
+        "marked": "■",
+        "choices": {
+          "5台及以下": {
+            "text": 0,
+            "start": 0,
+            "end": 1,
+            "text_sha256": "44de30249f34118d9eef1a3e9d1470966ac27c21cd726ba80920707fff1b844d"
+          },
+          "6-15台": {
+            "text": 0,
+            "start": 8,
+            "end": 9,
+            "text_sha256": "44de30249f34118d9eef1a3e9d1470966ac27c21cd726ba80920707fff1b844d"
+          },
+          "16-40台": {
+            "text": 0,
+            "start": 18,
+            "end": 19,
+            "text_sha256": "44de30249f34118d9eef1a3e9d1470966ac27c21cd726ba80920707fff1b844d"
+          },
+          "41-100台": {
+            "text": 0,
+            "start": 28,
+            "end": 29,
+            "text_sha256": "44de30249f34118d9eef1a3e9d1470966ac27c21cd726ba80920707fff1b844d"
+          },
+          "100台以上": {
+            "text": 0,
+            "start": 38,
+            "end": 39,
+            "text_sha256": "44de30249f34118d9eef1a3e9d1470966ac27c21cd726ba80920707fff1b844d"
+          }
+        }
+      }
+    },
+    "abstract_id": "14",
+    "billing_same": {
+      "paragraph": 29,
+      "paragraph_sha256": "e8d0d16350f98a03d58dfaecc78789e046a548eab66ae3170a3130b112a1043c",
+      "text": 0,
+      "text_sha256": "94d64339b99e37d70ef51dc6bcf6ae1bf9e92f814bdd77b831c37d9c80d4214d"
+    },
+    "collection": {
+      "paragraph": 34,
+      "paragraph_sha256": "6cae7cedda299deb288940d2834debea3d27958588c2eff0b1d7182a649946a2",
+      "text": 0,
+      "text_sha256": "acf235c44d13742f7328a440d81e5b4bfea2f47962634d2322dbb474609df8ff"
+    },
+    "cash": {
+      "paragraph": 35,
+      "paragraph_sha256": "9d2d762bcf48874db6e4e434c2e246416e1e41af27e6f3ab4ca684d8e8a89155",
+      "text": 0,
+      "text_sha256": "99d8195d02ddf16c4f9cbf6ae0533e8936e6687bf19c3ea8c98e8069b152547c"
+    }
+  }
+}

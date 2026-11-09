@@ -1,4 +1,5 @@
 import { unzipSync, zipSync, strToU8, strFromU8 } from 'fflate';
+import { dateParts } from './supplement.mjs';
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const R = 'http://schemas.openxmlformats.org/package/2006/relationships';
@@ -120,7 +121,7 @@ const groups = [
 const inputs = [['extra_credit_code','统一社会信用代码',true],['extra_industry','企业所属行业',true],['install_zip','安装邮编',true],['billing_zip','账单邮编',true],
   ['job_title','经办人职务'],['fax','传真'],['existing_line','在用宽带号码（选择在用宽带时必填）'],['paid_count','收费从设备数量（订购时必填）'],
   ['security_name','信息安全责任人姓名',true],['security_role','信息安全责任人职务',true],['security_phone','信息安全责任人联系电话',true],
-  ['service_use','业务用途',true],['delegate_company','代办单位'],['delegate_credit_code','代办单位信用代码'],['delegate_name','代办员工'],['delegate_id','代办员工身份证号']];
+  ['service_use','业务用途',true],['application_date','申请日期',true,'date'],['delegate_company','代办单位'],['delegate_credit_code','代办单位信用代码'],['delegate_name','代办员工'],['delegate_id','代办员工身份证号']];
 const octoberGroups = groups.map(group=>{
   const [key,label,required,items]=group;
   if(key==='plugin')return [key,'智企硬盘黄金版',required,[[46,0,'开通 20 人／1 TB']]];
@@ -266,7 +267,10 @@ export function renderCarrier(bytes, customer, rate) {
   values.billing_address=value('choice_billing')==='1'?value('billing_address'):'';
   requireThat(value('choice_billing')!=='1' || values.billing_address,'请填写其它账单地址。');
   values.bank_account=collection?value('bank_account'):'';
-  values.service_type='宽带'; values.application_type='新装';
+  const [year,month,day]=dateParts(values.application_date,'申请日期');
+  const dateParagraph=p[october?112:109];
+  requireThat(['sign_y','sign_m','sign_d'].every(key=>text(dateParagraph).split(token(key)).length===2),'申请日期位置无法确认，请重新导入兼容模板。');
+  Object.assign(values,{sign_y:year,sign_m:month,sign_d:day,service_type:'宽带',application_type:'新装'});
   for (const t of wt(doc)) t.textContent=t.textContent.replace(/\{\{([a-z_]+)\}\}/g,(_,key)=> {
     const v=values[key] ?? (/(?:sign|principal|delegate)_[ymd]$/.test(key)?'    ':null);
     requireThat(v!=null && v.length<=500 && !/[\u0000-\u001f<>]|\{\{|\}\}/.test(v),'发现无效或未映射的填写项。'); return v;

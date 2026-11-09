@@ -54,7 +54,7 @@ export function bindGeneration(root, state) {
     intake.setExtras(keys);
     const custom=template?.carrier_controls;
     extra.innerHTML = custom ? custom.groups.map(g=>'<label>'+esc(g.label)+'<select name="'+esc(g.key)+'" '+(g.required?'required':'')+'>'+options(g.options.map((name,id)=>({name,id})),g.required?'请选择':'不订购')+'</select></label>').join('')+
-      custom.inputs.filter(([key])=>!intakeExtraKeys.includes(key)).map(([key,label,required])=>'<label>'+esc(label)+'<input name="'+esc(key)+'" '+(required?'required':'')+' maxlength="500" autocomplete="off"></label>').join('') :
+      custom.inputs.filter(([key])=>!intakeExtraKeys.includes(key)).map(([key,label,required,type])=>'<label>'+esc(label)+'<input type="'+(type==='date'?'date':'text')+'" name="'+esc(key)+'" '+(required?'required':'')+' maxlength="500" autocomplete="off"></label>').join('') :
       keys.filter(k => !intakeExtraKeys.includes(k)).map(k => field(k, '模板必填 · ' + k.slice(6))).join('');
     form.elements.billing_address.disabled=false;
     generate.disabled = busy || !template;
