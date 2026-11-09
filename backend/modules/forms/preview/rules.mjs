@@ -99,3 +99,10 @@ export function validateCustomer(customer, mapping, tariff) {
   }
   return Object.fromEntries(Object.entries(mapping).map(([tag, key]) => [tag, values[key]]));
 }
+
+export function workDashboard(actor, roster, records) {
+  const admin=actor.role==='admin';
+  const counts=new Map((admin?roster:[actor]).map(person=>[person.id,0]));
+  for(const record of records) counts.set(record.created_by,(counts.get(record.created_by)||0)+1);
+  return {scope:admin?'team':'self', employees:[...counts].map(([id,forms_count])=>({id,forms_count,quote_count:null})), records};
+}

@@ -57,3 +57,7 @@ Demo 模板列表返回 `imported_at`（UTC ISO 8601）；已有模板没有录�
 
 ### 浏览器演示：已核验原表
 模板管理沿用 `POST /forms/templates/inspect` 和 `POST /forms/templates/import`，已核验原表的检查结果为 `reviewed: true`，包含名称、版本和资费列表。导入创建一条默认停用的模板记录。匹配候选附带 `reviewed_controls`，担保书只提交担保资料；生成仍使用 `POST /forms/generate`，结果中的 `review` 提示手工核对事项。这些扩展只在浏览器演示中启用。
+
+### 工作看板
+联调模式的 `GET /forms/dashboard` 返回 `scope`（team / self）、员工统计和生成记录。只有管理员能读取本工作区全部账号的记录，员工仅能读取自己的记录。报价还没有业务记录，`quote_count` 返回 null。成功生成一次计一次，幂等重试不重复计数。
+`GET /forms/dashboard/records/{id}/file` 按相同权限提供 Word 文件；个人历史接口仍只返回本人的记录。静态 Demo 的身份切换用于虚构数据验收，数据仅存于当前浏览器。

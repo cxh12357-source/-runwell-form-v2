@@ -32,6 +32,10 @@
 #navigation .nav-children a { padding: 9px 12px; font-size: 14px; }
 @media(max-width:680px) {
   #navigation { display: block; }
-  #navigation .nav-root { grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 6px; }
+  #navigation .nav-root { grid-template-columns: minmax(0, 1fr) auto auto; align-items: start; gap: 6px; }
   #navigation .nav-children { display: flex; flex-wrap: wrap; }
 }
+
+.dashboard-summary td { padding: 14px; }
+.demo-account { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.demo-account select { width: auto; }

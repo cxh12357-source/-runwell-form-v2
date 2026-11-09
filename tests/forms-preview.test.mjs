@@ -208,3 +208,24 @@ test('页面入口根据账号展示填写、本人历史、模板管理与切�
     assert.match(await renderForms('/forms/generate'), /id="forms-login"/);
   } finally { globalThis.fetch = sourceFetch; setToken(''); }
 });
+
+test('看板统计按账号隔离，管理员可查看和下载全员表单', async () => {
+  const a=await result(generate(await payload(),staff));
+  const b=await result(generate(await payload(),other));
+  assert.equal((await call('/dashboard',null)).status,401);
+  const own=await result(call('/dashboard',staff));
+  assert.equal(own.scope,'self');
+  assert.deepEqual(own.employees,[{id:'员工A',forms_count:own.records.length,quote_count:null}]);
+  assert.ok(own.records.some(row=>row.id===a.id));
+  assert.ok(!own.records.some(row=>row.id===b.id));
+  const team=await result(call('/dashboard',admin));
+  assert.equal(team.scope,'team');
+  assert.equal(team.employees.find(person=>person.id==='员工B').forms_count,team.records.filter(row=>row.created_by==='员工B').length);
+  assert.ok(team.records.some(row=>row.id===a.id));
+  assert.ok(team.records.some(row=>row.id===b.id));
+  const file='/dashboard/records/'+b.id+'/file';
+  assert.equal((await call(file,staff)).status,404);
+  assert.equal((await call(file,null)).status,401);
+  assert.deepEqual(await getBytes(call(file,admin)),await getBytes(call(file,other)));
+  assert.equal((await call('/records/'+b.id+'/file',admin)).status,404);
+});

@@ -16,7 +16,9 @@ test('免登录运行：拒绝缺项、生成 Word、刷新后下载、上传及
     const result = queue.then(fn); queue = result.catch(() => {}); return result;
   } } });
   globalThis.fetch = async () => assert.fail('演示资料不应经网络传输');
-  let { localFetch } = await import(source);
+  const sessionData=new Map();
+  globalThis.sessionStorage={getItem:key=>sessionData.get(key),setItem:(key,value)=>sessionData.set(key,value)};
+  let { localFetch, switchDemoAccount } = await import(source);
   const call = (path, method = 'GET', data) => localFetch('/api/v1/forms' + path, { method,
     headers: data ? { 'Content-Type': 'application/json' } : {}, body: data && JSON.stringify(data) });
   const result = async (response, status = 200) => {
@@ -129,6 +131,26 @@ test('免登录运行：拒绝缺项、生成 Word、刷新后下载、上传及
       assert.equal((await call('/records/'+record.id+'/file')).status,200);
     }
   }
+  globalThis.indexedDB = new IDBFactory();
+  const dashboard=()=>result(call('/dashboard'));
+  const boardFile=id=>call('/dashboard/records/'+id+'/file');
+  assert.equal((await dashboard()).scope,'team');
+  switchDemoAccount('a');
+  const make=async ()=>{
+    const matched=await match();
+    return result(call('/generate','POST',{...input,match_token:matched.match_token,request_id:crypto.randomUUID()}));
+  };
+  const staffA=await make();
+  assert.equal((await dashboard()).scope,'self');
+  assert.deepEqual((await dashboard()).records.map(r=>r.id),[staffA.id]);
+  switchDemoAccount('b');
+  assert.deepEqual((await dashboard()).records,[]);
+  assert.equal((await boardFile(staffA.id)).status,404);
+  const staffB=await make();
+  switchDemoAccount('admin');
+  assert.deepEqual((await dashboard()).records.map(r=>r.id),[staffB.id,staffA.id]);
+  assert.equal((await boardFile(staffA.id)).status,200);
+  assert.equal((await boardFile(staffB.id)).status,200);
   globalThis.indexedDB = new IDBFactory();
   assert.deepEqual(await result(call('/records')), []);
   assert.equal((await result(call('/templates'))).some(t => t.id === added.id), false);

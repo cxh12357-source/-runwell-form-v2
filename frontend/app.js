@@ -25,7 +25,7 @@ async function render() {
     '">工作台<span class="nav-chevron" aria-hidden="true"></span></button>' +
     '<ul id="workbench-children" class="nav-children" aria-label="工作台子导航"' + (workbenchExpanded ? '' : ' hidden') + '>' +
     sections.map(section => '<li>' + link(section) + '</li>').join('') +
-    '</ul></li><li>' + link({path:'/settings',name:'设置'}) + '</li></ul>';
+    '</ul></li><li>' + link({path:'/dashboard',name:'看板'}) + '</li><li>' + link({path:'/settings',name:'设置'}) + '</li></ul>';
   const toggle = navigation.querySelector('.nav-parent');
   toggle.onclick = () => {
     workbenchExpanded = !workbenchExpanded;
@@ -39,7 +39,7 @@ async function render() {
     else if (path === '/quotes') html = renderPending('业务报价');
     else if (path === '/review') html = renderPending('手续审核');
     else if (path === '/settings') html = renderSettings();
-    else if (['/forms/generate', '/forms/history', '/forms/templates'].includes(path)) html = await renderForms(path);
+    else if (['/dashboard', '/forms/generate', '/forms/history', '/forms/templates'].includes(path)) html = await renderForms(path);
     else html = '<h1>页面不存在</h1><a class="button" href="#/">返回工作台</a>';
     if (request !== sequence) return;
     view.innerHTML = html;
