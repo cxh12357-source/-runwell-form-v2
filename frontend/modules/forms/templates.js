@@ -5,8 +5,8 @@ export function templatesView({ rows, workspace, hosted }) {
   const mapping = Object.fromEntries(Object.keys(workspace.labels).map(key => [key, key]));
   const smart = workspace.smart_import ? '<section class="smart-import" aria-labelledby="smart-title"><h3 id="smart-title">智能导入 Word</h3>' +
     '<p>支持已核验的 100M、200M、智云护航 AI 原表及外地公司担保书，也可转换支持的 FTTR-B 模板。请上传空白 Word。</p>' +
-    '<div id="smart-drop"><label for="smart-file">把 .docx 文件拖到虚线框内</label><input id="smart-file" type="file" accept=".docx"></div>' +
-    '<p class="hint">拖拽没有反应时，可点击「选择文件」，两种方式使用相同的解析流程。</p>' +
+    '<div id="smart-drop"><label for="smart-file">把 .docx 文件拖到虚线框内</label><input id="smart-file" type="file" accept=".docx" multiple></div>' +
+    '<p class="hint">可拖拽或选择文件。批量导入仅接收已核验的空白原表；其他版式请逐份解析。</p>' +
     '<p id="smart-status" role="status"></p><div id="smart-preview" aria-live="polite"></div></section><div class="divider"></div><h3>手动上传模板</h3>' : '';
   return smart + '<form id="template-form">' + selectors() + '<div class="field-grid"><label>模板名称<input name="name" required maxlength="80"></label>' +
     '<label>版本号<input name="revision" required maxlength="80"></label><label>Word 模板（.docx）<input name="file" type="file" accept=".docx" required></label></div>' +
@@ -148,10 +148,60 @@ function bindSmartImport(root) {
       finally{button.disabled=false;}
     };
   }
+  const validDoc=file=>file && /\.docx$/i.test(file.name) && file.size>0 && file.size<=10000000;
+  async function inspectBatch(files,ticket) {
+    if(files.length>25){tell('每批最多选择 25 份 Word。');return;}
+    tell('正在核验 '+files.length+' 份空白原表…');
+    const verified=[], skipped=[];
+    for(const source of files){
+      if(ticket!==epoch||!root.isConnected)return;
+      if(!validDoc(source)){skipped.push(source.name);continue;}
+      try {
+        const file=await readFile(source), filename=source.name;
+        const result=await request('/templates/inspect',{method:'POST',data:{file,filename}});
+        if(result.reviewed)verified.push({file,filename,name:result.name});
+        else skipped.push(filename);
+      } catch {skipped.push(source.name);}
+    }
+    if(ticket!==epoch||!root.isConnected)return;
+    tell('已核验 '+verified.length+' 份；跳过 '+skipped.length+' 份。');
+    preview.innerHTML=(verified.length?'<ul>'+verified.map(item=>'<li>'+esc(item.name)+'</li>').join('')+
+      '</ul><form id="smart-batch-confirm"><label class="batch-enable"><input type="checkbox" name="enable">导入后启用新模板</label>'+
+      '<button class="button">批量导入已核验模板</button></form>':'')+
+      (skipped.length?'<p>未通过批量核验，请逐份检查：'+esc(skipped.join('、'))+'</p>':'');
+    const form=preview.querySelector('#smart-batch-confirm');
+    if(!form)return;
+    form.onsubmit=async event=>{
+      event.preventDefault();
+      const button=form.querySelector('button'), enable=form.elements.enable.checked;
+      picker.disabled=button.disabled=form.elements.enable.disabled=true;
+      let added=0, duplicates=0, enabled=0;
+      const failures=[];
+      for(const [index,item] of verified.entries()){
+        tell('正在处理 '+(index+1)+' / '+verified.length+'…');
+        try {
+          const saved=await request('/templates/import',{method:'POST',data:{file:item.file,filename:item.filename}});
+          if(saved.duplicate){duplicates++;continue;}
+          added++;
+          if(enable){
+            await request('/templates/'+saved.id,{method:'PATCH',data:{active:true}});
+            enabled++;
+          }
+        } catch(error){failures.push(item.name+'：'+error.message);}
+      }
+      if(root.isConnected){
+        const message='批量导入完成：新增 '+added+' 份，启用 '+enabled+' 份，已存在 '+duplicates+' 份。'+
+          (failures.length?' 未完成：'+failures.join('；'):'');
+        sessionStorage.setItem('runwell-smart-import-notice',message);
+        refresh();
+      }
+    };
+  }
   async function inspect(files) {
     const ticket=++epoch;
     preview.replaceChildren();
-    if(files.length!==1 || !/\.docx$/i.test(files[0].name) || !files[0].size || files[0].size>10000000){
+    if(files.length>1){await inspectBatch(files,ticket);return;}
+    if(files.length!==1 || !validDoc(files[0])){
       tell('请一次选择一份 10 MB 以内的 DOCX。'); return;
     }
     const filename=files[0].name.normalize('NFKC').replace(/\s+/g,'');

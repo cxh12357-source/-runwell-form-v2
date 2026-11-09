@@ -50,3 +50,6 @@
 .dashboard-total strong { color: #183f6c; font-size: 26px; }
 
 .business-selection > label[hidden] { display: none; }
+
+.batch-enable { display: flex; align-items: center; gap: 8px; }
+.batch-enable input { width: auto; height: auto; }

@@ -49,7 +49,8 @@ export function bindBusinessSelection(form,state) {
   }
   function sync(){
     const business=rows.filter(t=>t.business_id===fields.biz.value);
-    set('business_name',choices(business.map(t=>t.name)),'选择业务名称');
+    set('business_name',choices(business.map(t=>t.name).sort((a,b)=>a.localeCompare(b,'zh-CN',{numeric:true}))),
+      business.length?'选择业务名称':'模板目录暂无此类业务');
     const named=business.filter(t=>t.name===fields.business_name.value);
     set('attr',state.catalog.attributes,'选择业务属性',{disabled:!named.length});
     const byAttribute=named.filter(t=>t.business_attribute===fields.attr.value);
