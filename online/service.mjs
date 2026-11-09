@@ -1,5 +1,5 @@
 import { catalog } from './data.mjs';
-import { checkTariffMapping, sampleMapping, voiceVersion, FormError, insist, labels, match, tariffs, validateCustomer, validateMapping, version, dashboardPeriod, workDashboard } from './rules.mjs';
+import { checkTariffMapping, sampleMapping, selectedDiscount, voiceVersion, FormError, insist, labels, match, tariffs, validateCustomer, validateMapping, version, dashboardPeriod, workDashboard } from './rules.mjs';
 import { mime, renderWord } from './word.mjs';
 import sample from './sample.json' with {type:'json'};
 
@@ -113,6 +113,7 @@ async function generate(data,db,bucket,tenant,actor,plugin) {
   const t=await db.prepare('SELECT * FROM qa_templates WHERE tenant=? AND id=?').bind(tenant,template_id).first();
   const tariff=(await directory(db,tenant,plugin)).find(t=>t.id===selection.tariff_id);
   const mapping=JSON.parse(t.mapping);
+  const discount=selectedDiscount(selection,tariff);
   const bytes=await bytesFor(bucket,t.object_key,t.tariff_id);
   let file, review;
   if(tariff.reviewed_id && template_id===tariff.template_id){
@@ -126,10 +127,11 @@ async function generate(data,db,bucket,tenant,actor,plugin) {
     try { file=plugin.renderCarrier(bytes,customer,tariff); }
     catch(error) { throw new FormError(error.message); }
   } else file=renderWord(bytes,mapping,validateCustomer(customer,mapping,tariff));
+  if(discount?.manual)review=[...(review||[]),'discount_factor'];
   const id=crypto.randomUUID(), key='records/'+tenant+'/'+id;
   const snapshot={id,created_by:accounts[actor].id,created_at:new Date().toISOString(),status:'generated',
     business_id:tariff.business_id,business_version_id:tariff.business_version_id,business_attribute:tariff.business_attribute,
-    tariff,template:{id:t.id,name:t.name,revision:t.revision},...(review?{review}:{})};
+    tariff,template:{id:t.id,name:t.name,revision:t.revision},...(discount?{discount}:{}),...(review?{review}:{})};
   await bucket.put(key,file);
   // Compare the active set inside the same statement that inserts the record.
   const activeIds=matches.candidates.map(c=>c.id).sort();
@@ -145,11 +147,11 @@ async function generate(data,db,bucket,tenant,actor,plugin) {
 }
 
 async function carrierRates(db,tenant,info,templateId){
-  const {profile,name,rates}=info;
+  const {profile,name,rates,discountRate}=info;
   return Promise.all(rates.map(async rate=>{
-    const id='carrier-'+(await signature(JSON.stringify([profile,rate.bandwidth,rate.amount,rate.cycle]))).slice(0,24);
+    const id='carrier-'+(await signature(JSON.stringify([profile,rate.bandwidth,rate.amount,rate.cycle,...(discountRate?[discountRate]:[])]))).slice(0,24);
     const tariff={id,name,bandwidth:rate.bandwidth,amount:rate.amount,cycle:rate.cycle,business_id:version.business_id,
-      business_version_id:version.id,business_attribute:'new',voice_required:false,carrier_profile:profile,carrier_rate:rate.key,template_id:templateId};
+      business_version_id:version.id,business_attribute:'new',voice_required:false,carrier_profile:profile,carrier_rate:rate.key,template_id:templateId,...(discountRate?{discount_rate:discountRate}:{})};
     return db.prepare('INSERT OR REPLACE INTO demo_tariffs(tenant,id,data) VALUES(?,?,?)').bind(tenant,id,JSON.stringify(tariff));
   }));
 }
@@ -210,11 +212,12 @@ async function importCarrier(data,db,bucket,tenant,plugin,save) {
     if(!save && metadata)return json({metadata, convertible:false, conversionMessage:error.message});
     throw new FormError(error.message);
   }
-  const {profile,name,revision,rates,tags,file}=info;
+  const {profile,name,revision,rates,tags,file,discountRate}=info;
   if(!save)return json({name:'100M 智云上海专线基础版（'+revision+'）',metadata,convertible:true,rates,tags,variantRequired:info.variantRequired,discountNote:info.discountNote});
   insist(!info.variantRequired || ['discount','standard'].includes(data.variant),'请确认此模板属于打折还是不打折。');
-  const id='carrier-'+profile;
-  const existing=(await directory(db,tenant,plugin)).find(t=>t.carrier_profile===profile && t.template_id);
+  const id='carrier-'+profile+(discountRate?'-rate-'+discountRate.replace('.','-'):'');
+  const existing=(await directory(db,tenant,plugin)).find(t=>t.carrier_profile===profile && t.template_id &&
+    (t.discount_rate||'')===(discountRate||''));
   if(existing)return json({id:existing.template_id,duplicate:true});
   const already=await db.prepare('SELECT id FROM qa_templates WHERE tenant=? AND id=?').bind(tenant,id).first();
   if(already)return json({id,duplicate:true});
@@ -257,7 +260,12 @@ export async function handleForms(req,env) {
     insist(entry,'验收身份已过期，请重新进入。',401);
     const actor=entry.actor;
     if(plugin)await consolidateCarrier(db,bucket,tenant,plugin);
-    if(path==='/forms/workspace' && method==='GET')return json({actor:accounts[actor],tariffs:await directory(db,tenant,plugin),labels,smart_import:Boolean(plugin)});
+    if(path==='/forms/workspace' && method==='GET'){
+      const plans=await directory(db,tenant,plugin);
+      const enabled=plugin?new Set((await templates(db,tenant)).filter(t=>t.active).map(t=>t.id)):null;
+      return json({actor:accounts[actor],tariffs:plans.map(t=>enabled&&t.template_id?{...t,template_active:enabled.has(t.template_id)}:t),
+        labels,smart_import:Boolean(plugin)});
+    }
     if(path==='/forms/match' && method==='POST')return json(await candidates((await body(req)).selection,db,tenant,plugin));
     if(path==='/forms/generate' && method==='POST')return await generate(await body(req),db,bucket,tenant,actor,plugin);
     if(path==='/forms/records' && method==='GET'){

@@ -1,6 +1,6 @@
 import { escape as esc } from '../../lib/api.js';
 import { businessText, titles, companyTitles, parseReply, validValue, requiredKeys, followup,
-  matchReplyTariff, lookupFixture, staffEstimates } from './intake-rules.js';
+  lookupFixture, staffEstimates } from './intake-rules.js';
 
 const voiceKeys = Object.keys(titles).filter(k=>k.startsWith('extra_'));
 export const intakeExtraKeys = [...voiceKeys, ...Object.keys(companyTitles)];
@@ -13,6 +13,7 @@ export function intakePanel() {
     '<div>'+box('material-text','手续材料提示',6)+copy('material-text','复制手续材料提示')+'</div></div>'+
     '<h3>核对客户回复</h3>'+box('reply-text','粘贴客户整段回复或本次补充',4)+
     '<button type="button" class="button" id="read-reply">识别并填入空白栏</button>'+
+    '<p class="hint">回复中的业务、语音及折扣请在上方核对并选择。</p>'+
     '<p id="read-summary" aria-live="polite"></p><div id="reply-conflicts"></div>'+
     '<div id="followup-block" hidden>'+box('followup-text','发给客户的补充话术',4)+copy('followup-text','复制缺项追问')+'</div>'+
     '<p id="copy-feedback" aria-live="polite"></p></section>';
@@ -27,11 +28,13 @@ export function internalPanel() {
     '</div><p id="estimate" class="hint"></p></section>';
 }
 
-export function bindIntake(form, state) {
+export function bindIntake(form) {
   const at=id=>form.querySelector('#'+id);
   const control=key=>form.elements.namedItem(key);
-  const voice=()=>state.workspace.tariffs.some(t=>t.business_version_id===control('ver').value && t.voice_required);
-  const enabled=()=>control('biz').value==='business-line' && Boolean(control('ver').value) && control('attr').value==='new';
+  const voice=()=>control('voice').value==='yes';
+  const enabled=()=>control('biz').value==='business-line' && Boolean(control('business_name').value) &&
+    control('business_name').value!=='外地公司担保书' && control('attr').value==='new' && Boolean(control('voice').value);
+  const neededKeys=()=>requiredKeys(voice(),control('payment_method').value).filter(key=>key!=='tariff');
   let context='', checked=false, pending=false, activeCompany='', extras=[], conflicts=new Map(), missing=[];
   const put=(key,value)=>{ control(key).value=value; };
   function updateRequired() {
@@ -40,7 +43,7 @@ export function bindIntake(form, state) {
   }
   function updateFollowup() {
     if(!checked || !enabled()) return;
-    const needed=requiredKeys(voice(),control('payment_method').value);
+    const needed=neededKeys();
     missing=needed.filter(key=>!conflicts.has(key) && !validValue(key,control(key).value.trim()));
     const review=needed.filter(key=>conflicts.has(key));
     at('followup-block').hidden=!missing.length;
@@ -75,7 +78,7 @@ export function bindIntake(form, state) {
     at('lookup-status').textContent='来源：虚构验收样例。请核对信用代码、行业和估算区间。';
   }
   function setContext() {
-    const next=enabled()?control('ver').value:'';
+    const next=enabled()?control('business_name').value+'|'+control('voice').value:'';
     at('intake').hidden=at('company-fields').hidden=!next;
     at('voice-fields').hidden=!next||!voice();
     if(next!==context) {
@@ -91,26 +94,25 @@ export function bindIntake(form, state) {
   function analyze() {
     if(!at('reply-text').value.trim()){at('read-summary').textContent='请先粘贴客户回复。';return;}
     const parsed=parseReply(at('reply-text').value);
-    const choices=state.workspace.tariffs.filter(t=>t.business_version_id===control('ver').value && t.business_attribute===control('attr').value);
     for(const key of ['payment_method',...Object.keys(parsed).filter(k=>k!=='payment_method')]){
-      if(!parsed[key] || !requiredKeys(voice(),control('payment_method').value).includes(key)) continue;
-      const values=parsed[key].map(v=>key==='tariff'?matchReplyTariff(v,choices):v);
+      if(!parsed[key] || !neededKeys().includes(key)) continue;
+      const values=parsed[key];
       const current=control(key).value.trim();
-      if (values.length===1 && !validValue(key,values[0]) && !current && key!=='tariff') {conflicts.delete(key);continue;}
+      if (values.length===1 && !validValue(key,values[0]) && !current) {conflicts.delete(key);continue;}
       if(values.length!==1 || !validValue(key,values[0]) || (current && values[0]!==current)) {conflicts.set(key,true);continue;}
       conflicts.delete(key);
       if(current) continue;
       put(key,values[0]);
-      if(['tariff','payment_method'].includes(key)) control(key).dispatchEvent(new Event('change',{bubbles:true}));
+      if(key==='payment_method') control(key).dispatchEvent(new Event('change',{bubbles:true}));
     }
     syncCompany(true); checked=true;pending=false;
     form.dispatchEvent(new Event('input',{bubbles:true}));updateFollowup();
   }
   form.addEventListener('change',event=>{
     const key=event.target.name;
-    if(['biz','ver','attr','tariff'].includes(key)) setContext();
+    if(['biz','business_name','attr','voice'].includes(key)) setContext();
     if(key==='company_name'){syncCompany(false);if(control(key).value.trim())lookup();}
-    if(key && (key==='payment_method' || key==='tariff') && validValue(key,control(key).value)) conflicts.delete(key);
+    if(key && key==='payment_method' && validValue(key,control(key).value)) conflicts.delete(key);
     if(key) updateFollowup();
   });
   form.addEventListener('input',event=>{
@@ -136,7 +138,7 @@ export function bindIntake(form, state) {
     beforeGenerate() {
       if(!enabled())return '';
       if(pending)return '请先识别这次粘贴的回复，或清空回复框。';
-      if(requiredKeys(voice(),control('payment_method').value).some(key=>conflicts.has(key)))return '请先处理客户回复中的冲突。';
+      if(neededKeys().some(key=>conflicts.has(key)))return '请先处理客户回复中的冲突。';
       return '';
     }
   };

@@ -1,3 +1,5 @@
+import { classifyTariff, matchingBusinessRows, validDiscount } from '../frontend/modules/forms/business-selection.js';
+import { selectedDiscount } from '../backend/modules/forms/preview/rules.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {businessText,parseReply,requiredKeys,matchReplyTariff,followup,validValue,lookupFixture,staffEstimates} from '../frontend/modules/forms/intake-rules.js';
@@ -50,4 +52,25 @@ test('带空格的经办人电话和 E-MAIL 标签按各自字段识别，保留
   assert.deepEqual(reply,{contact_name:['测试甲'],phone:['13800138000'],email:['qa@example.invalid']});
   assert.ok(validValue('phone',reply.phone[0]) && validValue('email',reply.email[0]));
   assert.deepEqual(parseReply('经办人联系电话 （手机）：138 0013 8000；手机号：13900139000').phone,['13800138000','13900139000']);
+});
+
+test('业务名合并语音与折扣变体，模板按属性、语音和已知折数匹配',()=>{
+  const base={business_id:'business-line',business_attribute:'new'};
+  const variants=[
+    {id:'plain',reviewed_id:'business-100m-no-voice'},
+    {id:'voice',reviewed_id:'business-100m-voice',voice_required:true},
+    {id:'fixed',carrier_profile:'fttr-b-shanghai-2026-10-21-discount',discount_rate:'8'},
+    {id:'manual',reviewed_id:'business-100m-discount-no-voice'},
+    {id:'200m',reviewed_id:'business-200m-no-voice'}
+  ].map(row=>classifyTariff({...base,...row}));
+  assert.deepEqual(new Set(variants.map(t=>t.name)),new Set(['100M 智云上海专线基础版','200M 智云上海专线升级版']));
+  const criteria={biz:'business-line',business_name:variants[0].name,attr:'new',voice:'no',discount:'yes',discount_rate:'8.5'};
+  assert.deepEqual(matchingBusinessRows(variants,criteria).map(r=>r.id),['manual']);
+  assert.deepEqual(matchingBusinessRows(variants,{...criteria,discount_rate:'8.0'}).map(r=>r.id),['fixed','manual']);
+  assert.deepEqual(matchingBusinessRows(variants,{...criteria,voice:'yes',discount:'no'}).map(r=>r.id),['voice']);
+  assert.deepEqual(matchingBusinessRows(variants,{...criteria,attr:'relocation'}),[]);
+  assert.ok(validDiscount('8.5'));
+  assert.ok(!validDiscount('0')&&!validDiscount('10'));
+  assert.equal(selectedDiscount({discount_mode:'yes',discount_factor:'8.5'},variants[2]),false);
+  assert.deepEqual(selectedDiscount({discount_mode:'yes',discount_factor:'8.5'},variants[3]),{mode:'yes',factor:'8.5',manual:true});
 });

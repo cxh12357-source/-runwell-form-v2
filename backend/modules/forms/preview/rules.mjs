@@ -45,6 +45,16 @@ function clean(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 const dimensions = ['business_id', 'business_version_id', 'business_attribute', 'voice_required', 'cycle', 'bandwidth', 'amount'];
+export function selectedDiscount(selection,tariff) {
+  if(selection.discount_mode===undefined && selection.discount_factor===undefined)return null;
+  const mode=(tariff.reviewed_id?.includes('-discount-')||tariff.carrier_profile?.endsWith('-discount'))?'yes':'no';
+  if(selection.discount_mode!==mode || (mode==='no' && selection.discount_factor!==undefined))return false;
+  if(mode==='no')return {mode};
+  const factor=selection.discount_factor;
+  if(typeof factor!=='string' || !/^(?:[1-9](?:\.\d{1,2})?|0\.\d{1,2})$/.test(factor) || Number(factor)<=0 ||
+    (tariff.discount_rate && Number(tariff.discount_rate)!==Number(factor)))return false;
+  return {mode,factor,manual:!tariff.discount_rate};
+}
 export function match(selection, templates, directory = tariffs) {
   const missing = ['tariff_id', ...dimensions].filter(key => selection[key] == null || selection[key] === '');
   const result = { status: 'not_found', candidates: [], missing_fields: missing, conflicts: [] };
@@ -52,6 +62,7 @@ export function match(selection, templates, directory = tariffs) {
   const tariff = directory.find(t => t.id === selection.tariff_id);
   if (!tariff) return result;
   result.conflicts = dimensions.filter(key => selection[key] !== tariff[key]);
+  if(selectedDiscount(selection,tariff)===false)result.conflicts.push('discount_factor');
   if (result.conflicts.length) return { ...result, status: 'conflict' };
   result.candidates = templates.filter(t => t.active && t.tariff_id === tariff.id).map(t =>
     ({ id: t.id, name: t.name, revision: t.revision }));

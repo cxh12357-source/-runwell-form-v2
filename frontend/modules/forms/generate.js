@@ -1,5 +1,6 @@
 import { escape as esc } from '../../lib/api.js';
-import { bindClassification, downloadControl, options, request, selectors, status } from './shared.js';
+import { downloadControl, options, request, status } from './shared.js';
+import { businessFields, businessSelectors, bindBusinessSelection } from './business-selection.js';
 
 import { bindIntake, intakePanel, internalPanel, intakeExtraKeys } from './intake.js';
 
@@ -8,9 +9,9 @@ function field(name, title, type = 'text') {
   return '<label>' + esc(title) + '<input name="' + esc(name) + '" type="' + type + '" required maxlength="500" autocomplete="off"></label>';
 }
 export function generationShell(content) {
-  return '<form id="generate-form">' + selectors() +
+  return '<form id="generate-form">' + businessSelectors() +
     '<button class="button" type="button" id="match">匹配模板</button><div id="match-result"></div>' + content +
-    '<p id="generate-hint" class="hint">请先在上方选择套餐或担保书，并匹配一份已启用的模板。</p><button id="generate" class="button" aria-describedby="generate-hint" disabled>确认生成 Word</button></form><div id="generated"></div>';
+    '<p id="generate-hint" class="hint">请先在上方选好业务和所需条件，再匹配一份已启用的模板。</p><button id="generate" class="button" aria-describedby="generate-hint" disabled>确认生成 Word</button></form><div id="generated"></div>';
 }
 
 export function generation(labels) {
@@ -24,8 +25,8 @@ export function generation(labels) {
 
 export function bindGeneration(root, state) {
   const form = root.querySelector('#generate-form');
-  const selected = bindClassification(form, state);
-  const intake = bindIntake(form, state);
+  const selected = bindBusinessSelection(form, state);
+  const intake = bindIntake(form);
   const result = root.querySelector('#match-result');
   const extra = root.querySelector('#extra');
   const generate = root.querySelector('#generate');
@@ -34,7 +35,7 @@ export function bindGeneration(root, state) {
   const bank = root.querySelector('#bank-fields');
   const application = form.querySelector('#application-fields');
   const reviewLabels={billing_address:'其他账单地址',bank_name:'开户银行',authorization:'授权委托书',voice_identity:'语音实名资料（如适用）',
-    line_count:'线路数量',service_options:'业务选项',signature:'签字盖章',guarantee_signature:'签字盖章',
+    discount_factor:'折数及折后资费',line_count:'线路数量',service_options:'业务选项',signature:'签字盖章',guarantee_signature:'签字盖章',
     guarantee_number:'电信业务号码',guarantee_date:'担保日期'};
   let epoch = 0, candidates = [], template = null, matchToken, requestId, busy = false;
   root.querySelector('#fill-example').onclick = () => {
@@ -79,9 +80,13 @@ export function bindGeneration(root, state) {
     choose('');
     status(root, '');
   }
-  form.oninput = () => { requestId = undefined; generated.replaceChildren(); };
+  form.oninput = event => {
+    requestId = undefined;
+    generated.replaceChildren();
+    if(event.target.name==='discount_rate')invalidate();
+  };
   form.addEventListener('change', event => {
-    if (['biz','ver','attr','tariff'].includes(event.target.name)) invalidate();
+    if (businessFields.includes(event.target.name)) invalidate();
     if (event.target.name === 'candidate') choose(event.target.value);
     if(event.target.name==='choice_billing'){
       const confirmation=extra.querySelector('#review-billing');
@@ -100,7 +105,7 @@ export function bindGeneration(root, state) {
   root.querySelector('#match').onclick = async () => {
     invalidate();
     const selection = selected();
-    if (!selection) return status(root, '请依次选择业务名称、版本、属性及套餐。');
+    if (!selection) return status(root, '请核对业务种类、业务名称、业务属性、语音和折扣；如有多种版式或付费周期，也请选择。');
     const ticket = epoch;
     try {
       const match = await request('/match', { method: 'POST', data: { selection } });

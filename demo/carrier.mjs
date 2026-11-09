@@ -217,8 +217,12 @@ export function analyzeCarrier(bytes,variant) {
   const tags = [...new Set(wt(doc).flatMap(t=>[...t.textContent.matchAll(/\{\{([a-z_]+)\}\}/g)].map(m=>m[1])))];
   const discountNote=[39,40].some(i=>/(?:\d+(?:\.\d+)?折|折扣|折后)/.test(compact(p[i])));
   const discounted=variant==='discount';
+  const factors=[...new Set([39,40].flatMap(i=>[...compact(p[i]).matchAll(/(?:^|[^\d.])([1-9](?:\.\d{1,2})?)折/g)]
+    .map(match=>String(Number(match[1])))))];
+  const discountRate=discounted&&factors.length===1?factors[0]:null;
+  requireThat(variant!=='standard'||!discountNote,'原表基础套餐有折扣备注，请核对模板类型。');
   const baseProfile=october?octoberProfile:profile;
-  return {profile:discounted?baseProfile+'-discount':baseProfile,variantRequired:october||discountNote,discountNote,
+  return {profile:discounted?baseProfile+'-discount':baseProfile,variantRequired:october||discountNote,discountNote,discountRate,
     name:october?name+(discounted?'（打折、不带语音 · 10 月 21 日版）':'（不打折、不带语音 · 10 月 21 日版）'):name+(discounted?'（打折、不带语音）':''),
     revision:october?'2026-10-21':'2026/A',rates,tags,file:zipSync(files,{level:6})};
 }

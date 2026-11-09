@@ -8,7 +8,7 @@ function history(rows, catalog, hosted, fileRoot = '/records/', fileLabel = '下
   if (!rows.length) return '<p>当前账号还没有生成记录。</p>';
   return '<div class="table-wrap"><table><thead><tr><th>业务及套餐</th><th>模板版本</th><th>创建人</th><th>生成时间</th><th>状态</th><th>文件</th></tr></thead><tbody>' + rows.map(r =>
     '<tr><td>' + label(catalog.businesses, r.business_id) + '／' + label(catalog.versions, r.business_version_id) + '／' +
-    label(catalog.attributes, r.business_attribute) + '<br>' + esc(r.tariff.name) + '</td><td>' + esc(r.template.name) +
+    label(catalog.attributes, r.business_attribute) + '<br>' + esc(r.tariff.name) + (r.discount?.factor?' · '+esc(r.discount.factor)+' 折':'') + '</td><td>' + esc(r.template.name) +
     '<br>' + esc(r.template.revision) + '</td><td>' + esc(r.created_by) + '</td><td>' + esc(new Date(r.created_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})) +
     '</td><td>已生成</td><td>' + downloadControl(fileRoot + r.id + '/file', fileLabel, hosted) + '</td></tr>').join('') + '</tbody></table></div>';
 }
