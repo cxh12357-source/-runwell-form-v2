@@ -17,7 +17,7 @@
 
 客户字段：company_name、install_address、billing_address、contact_name、phone、id_number、email、payment_method（cash/collection）、bank_account、bank_name。
 
-匹配字段：business_id、business_version_id、business_attribute、voice_required、package_request（原始套餐描述）、tariff_id。金额采用精确表示；手机号、身份证、银行账号保留字符串。正式字段需双方确认。
+匹配字段：business_id、business_version_id、business_attribute、voice_required、package_request（原始套餐描述）、tariff_id。金额采用精确表示；手机号、身份证、银行账号保留字符串。身份证号和 E-MAIL 为生成必填；付款方式为托收时银行账号和开户银行必填。有《网络及信息安全承诺书》的已核验套餐表单生成时须填写信息安全责任人姓名、职务及联系方式。正式字段需双方确认。
 
 匹配返回：status（unique/ambiguous/not_found/conflict）、candidates（套餐ID、模板ID及版本、名称、依据）、missing_fields、conflicts。
 

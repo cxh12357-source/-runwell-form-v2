@@ -14,7 +14,7 @@ export async function request(path, { method = 'GET', data, file = false, creden
   }
   return file ? response.blob() : (await response.json()).data;
 }
-export const refresh = () => window.dispatchEvent(new Event('hashchange'));
+export const refresh = (resetProgress = false) => window.dispatchEvent(new CustomEvent('runwell:refresh', { detail: { resetProgress } }));
 export const status = (root, message) => { root.querySelector('[role="status"]:not(#smart-status)').textContent = message; };
 export function options(rows, label = '请选择') {
   return '<option value="">' + esc(label) + '</option>' + rows.map(row =>
@@ -68,4 +68,15 @@ export function downloadControl(path, title, hosted) {
   return hosted
     ? '<a class="button" download href="/api/v1/forms' + esc(path) + '">' + esc(title) + '</a>'
     : '<button class="button" type="button" data-file="' + esc(path) + '">' + esc(title) + '</button>';
+}
+
+export async function copyTextArea(area,feedback) {
+  let copied=false;
+  try { await navigator.clipboard.writeText(area.value); copied=true; }
+  catch {
+    area.focus();
+    area.select();
+    try { copied=document.execCommand('copy'); } catch {}
+  }
+  feedback.textContent=copied?'已复制，可粘贴给客户。':'已选中，请手动复制。';
 }

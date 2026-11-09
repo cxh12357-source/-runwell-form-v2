@@ -1,3 +1,5 @@
+import { intakePanel } from '../frontend/modules/forms/intake.js';
+import { generatedMaterials } from '../frontend/modules/forms/generate.js';
 import { classifyTariff, matchingBusinessRows, validDiscount } from '../frontend/modules/forms/business-selection.js';
 import { selectedDiscount } from '../backend/modules/forms/preview/rules.mjs';
 import test from 'node:test';
@@ -73,4 +75,15 @@ test('业务名合并语音与折扣变体，模板按属性、语音和已知�
   assert.ok(!validDiscount('0')&&!validDiscount('10'));
   assert.equal(selectedDiscount({discount_mode:'yes',discount_factor:'8.5'},variants[2]),false);
   assert.deepEqual(selectedDiscount({discount_mode:'yes',discount_factor:'8.5'},variants[3]),{mode:'yes',factor:'8.5',manual:true});
+});
+
+test('手续材料只在生成结果中按表单语音属性显示，不猜未标注模板',()=>{
+  const tariff={business_id:'business-line',business_attribute:'new'};
+  assert.doesNotMatch(intakePanel(),/手续材料提示/);
+  assert.match(generatedMaterials({...tariff,voice_required:true}),/使用人（实名制）身份证正反面复印件/);
+  assert.match(generatedMaterials({...tariff,voice_required:true}),/经办人本人在/);
+  assert.doesNotMatch(generatedMaterials({...tariff,voice_required:false}),/法定代表人|上门受理/);
+  assert.match(generatedMaterials({...tariff,voice_required:false}),/复制手续材料提示/);
+  assert.doesNotMatch(generatedMaterials({...tariff,reviewed_id:'business-ai-v1',voice_required:false}),/复制手续材料提示/);
+  assert.equal(generatedMaterials({...tariff,reviewed_id:'business-guarantee'}),'');
 });

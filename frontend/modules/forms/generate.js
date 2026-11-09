@@ -1,7 +1,8 @@
 import { escape as esc } from '../../lib/api.js';
-import { downloadControl, options, request, status } from './shared.js';
-import { businessFields, businessSelectors, bindBusinessSelection } from './business-selection.js';
+import { copyTextArea, downloadControl, options, request, status } from './shared.js';
+import { classifyTariff, businessFields, businessSelectors, bindBusinessSelection } from './business-selection.js';
 
+import { businessText } from './intake-rules.js';
 import { bindIntake, intakePanel, internalPanel, intakeExtraKeys } from './intake.js';
 
 const customerFields = ['company_name','install_address','billing_address','contact_name','phone','id_number','email'];
@@ -14,10 +15,23 @@ export function generationShell(content) {
     '<p id="generate-hint" class="hint">请先在上方选好业务和所需条件，再匹配一份已启用的模板。</p><button id="generate" class="button" aria-describedby="generate-hint" disabled>确认生成 Word</button></form><div id="generated"></div>';
 }
 
+export function generatedMaterials(tariff) {
+  if(tariff?.business_id!=='business-line' || tariff.business_attribute!=='new')return '';
+  const {blank,voice}=classifyTariff(tariff);
+  if(blank)return '';
+  if(voice==='unknown' || typeof tariff.voice_required!=='boolean')
+    return '<p class="hint">该模板未确认是否带语音，请先核对 Word 和实际办理业务，再提供手续材料清单。</p>';
+  const text=businessText[voice==='yes'?'voice':'no_voice'].materials;
+  return '<section class="generated-materials"><div class="divider"></div><label>手续材料提示'+
+    '<textarea id="generated-material-text" rows="8" readonly>'+esc(text)+'</textarea></label>'+
+    '<button type="button" id="copy-generated-materials">复制手续材料提示</button>'+
+    '<p id="generated-material-feedback" aria-live="polite"></p></section>';
+}
+
 export function generation(labels) {
   return generationShell('<fieldset id="application-fields" class="application-fields">' + intakePanel() +
     '<div class="divider"></div><h3>客户资料</h3><button id="fill-example" type="button">用虚构样例补全空白栏</button><div class="field-grid">' +
-    customerFields.map(key => field(key, labels[key], key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text')).join('') +
+    customerFields.map(key => field(key, key === 'id_number' ? '* 身份证号码' : key === 'email' ? '* E-MAIL' : labels[key], key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text')).join('') +
     '<label>付款方式<select name="payment_method" required><option value="">请选择</option><option value="cash">现金</option><option value="collection">托收</option></select></label></div>' +
     '<fieldset hidden id="bank-fields" disabled><div class="field-grid">' + field('bank_account', labels.bank_account) +
     field('bank_name', labels.bank_name) + '</div></fieldset>' + internalPanel() + '</fieldset><div id="extra" class="field-grid"></div>');
@@ -62,7 +76,7 @@ export function bindGeneration(root, state) {
     application.hidden=application.disabled=Boolean(reviewed?.blank);
     const custom=reviewed || template?.carrier_controls;
     extra.innerHTML = custom ? custom.groups.map(g=>'<label>'+esc(g.label)+'<select name="'+esc(g.key)+'" '+(g.required?'required':'')+'>'+options(g.options.map((name,id)=>({name,id})),g.required?'请选择':'不订购')+'</select></label>').join('')+
-      custom.inputs.filter(([key])=>!intakeExtraKeys.includes(key)).map(([key,label,required,type])=>'<label>'+esc(label)+'<input type="'+(type==='date'?'date':'text')+'" name="'+esc(key)+'" '+(required?'required':'')+' maxlength="500" autocomplete="off"></label>').join('') :
+      custom.inputs.filter(([key])=>!intakeExtraKeys.includes(key)).map(([key,label,required,type])=>'<label>'+esc(label)+'<input type="'+(['date','email'].includes(type)?type:'text')+'" name="'+esc(key)+'" '+(required?'required':'')+' maxlength="500" autocomplete="off"></label>').join('') :
       keys.filter(k => !intakeExtraKeys.includes(k)).map(k => field(k, '模板必填 · ' + k.slice(6))).join('');
     if(reviewed && !reviewed.blank){
       extra.insertAdjacentHTML('beforeend','<label hidden id="review-billing"><input type="checkbox" name="manual_billing_ack" required disabled> 确认下载后在 Word 中手工填入其他账单地址</label>');
@@ -140,7 +154,9 @@ export function bindGeneration(root, state) {
       const row = await request('/generate', { method: 'POST', data: { request_id: requestId, match_token: matchToken, template_id: template.id, selection: selected(), customer } });
       status(root, '生成成功，文件已保存到此账号的历史记录。');
       generated.innerHTML = (row.review?.length ? '<p>下载后请核对版式，并处理：'+esc(row.review.map(key=>reviewLabels[key]||key).join('、'))+'。</p>' : '')+
-        downloadControl('/records/' + row.id + '/file', '下载已生成的 Word', state.hosted);
+        downloadControl('/records/' + row.id + '/file', '下载已生成的 Word', state.hosted) + generatedMaterials(row.tariff);
+      const copyMaterials=generated.querySelector('#copy-generated-materials');
+      if(copyMaterials)copyMaterials.onclick=()=>copyTextArea(generated.querySelector('#generated-material-text'),generated.querySelector('#generated-material-feedback'));
     } catch (error) {
       status(root, error.message);
       if (error.status === 409) { invalidate(); status(root, error.message); }

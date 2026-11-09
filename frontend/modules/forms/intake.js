@@ -1,4 +1,5 @@
 import { escape as esc } from '../../lib/api.js';
+import { copyTextArea } from './shared.js';
 import { businessText, titles, companyTitles, parseReply, validValue, requiredKeys, followup,
   lookupFixture, staffEstimates } from './intake-rules.js';
 
@@ -9,8 +10,7 @@ const box = (id,label,rows)=>'<label>'+label+'<textarea id="'+id+'" rows="'+rows
 const copy = (id,label)=>'<button type="button" data-copy="'+id+'">'+label+'</button>';
 export function intakePanel() {
   return '<section id="intake" hidden><div class="divider"></div><h3>发给客户</h3>'+
-    '<div class="intake-columns"><div>'+box('info-text','填写信息话术',6)+copy('info-text','复制填写信息话术')+'</div>'+
-    '<div>'+box('material-text','手续材料提示',6)+copy('material-text','复制手续材料提示')+'</div></div>'+
+    box('info-text','填写信息话术',6)+copy('info-text','复制填写信息话术')+
     '<h3>核对客户回复</h3>'+box('reply-text','粘贴客户整段回复或本次补充',4)+
     '<button type="button" class="button" id="read-reply">识别并填入空白栏</button>'+
     '<p class="hint">回复中的业务、语音及折扣请在上方核对并选择。</p>'+
@@ -86,7 +86,7 @@ export function bindIntake(form) {
       at('read-summary').textContent=''; at('reply-conflicts').replaceChildren(); at('followup-block').hidden=true;
       at('copy-feedback').textContent=''; at('reply-text').value='';
       const scripts=businessText[voice()?'voice':'no_voice'];
-      at('info-text').value=scripts.info; at('material-text').value=scripts.materials;
+      at('info-text').value=scripts.info;
       if(!voice()) for(const key of voiceKeys) put(key,'');
     }
     updateRequired();updateFollowup();
@@ -129,8 +129,7 @@ export function bindIntake(form) {
   at('intake').addEventListener('click',async event=>{
     const button=event.target.closest('[data-copy]');if(!button)return;
     const area=at(button.dataset.copy);
-    try{await navigator.clipboard.writeText(area.value);at('copy-feedback').textContent='已复制，可粘贴给客户。';}
-    catch{area.focus();area.select();at('copy-feedback').textContent=document.execCommand('copy')?'已复制，可粘贴给客户。':'已选中，请手动复制。';}
+    await copyTextArea(area,at('copy-feedback'));
   });
   setContext();
   return {

@@ -180,6 +180,10 @@ export function analyzeCarrier(bytes,variant) {
     [39,40].every((i,j)=>(text(p[i]).match(glyphs)||[]).length===rateRows[j].length),
   '未能唯一定位三种基础资费，请核对 Word 原表。');
   for (const [i,key] of primary) {
+    if (['id_number','email'].includes(key) && !compact(p[i-1]).startsWith('*')) {
+      const first=wt(p[i-1])[0];
+      first.textContent='*'+first.textContent;
+    }
     const n = text(p[i]);
     if (!n.trim() && october) append(p[i],token(key));
     else {
@@ -243,18 +247,28 @@ export function renderCarrier(bytes, customer, rate) {
   const rateIndex = Number(rate.carrier_rate);
   requireThat([0,1,2].includes(rateIndex),'套餐资费无法确认。');
   select(rateIndex===2?40:39,rateIndex===2?0:rateIndex);
+  for (const [i,key] of primary) {
+    if (['id_number','email'].includes(key) && !compact(p[i-1]).startsWith('*')) {
+      const first=wt(p[i-1])[0];
+      first.textContent='*'+first.textContent;
+    }
+  }
+  // Replace list-based boxes on both sides, including the unselected option.
+  for (const i of [29,30,34,35]) {
+    const nums=all(p[i],W,'numPr');
+    if (!nums.length) continue; // Older layouts already have a literal box.
+    requireThat(nums.length===1 && !/[□■☐☑]/.test(text(p[i])), '原表方框位置已变化。');
+    nums[0].remove();
+    const r=doc.createElementNS(W,'w:r'), t=doc.createElementNS(W,'w:t');
+    t.setAttributeNS(xmlSpace,'xml:space','preserve'); t.textContent=marks.has(i)?'■ ':'□ '; r.append(t);
+    p[i].insertBefore(r,p[i].children[1] || null);
+    marks.delete(i);
+  }
   for (const [i,positions] of marks) {
-    if (i === 30 || i === 34 || october && (i === 29 || i === 35)) {
-      const num = all(p[i],W,'numPr')[0]; requireThat(num,'空框编号已变化。'); num.remove();
-      const r=doc.createElementNS(W,'w:r'), t=doc.createElementNS(W,'w:t');
-      t.setAttributeNS(xmlSpace,'xml:space','preserve'); t.textContent='■ '; r.append(t);
-      p[i].insertBefore(r,p[i].children[1] || null);
-    } else {
       const squares = [...text(p[i]).matchAll(/□/g)];
       for (const j of [...positions].sort((a,b)=>b-a)) {
         requireThat(squares[j],'空框位置已变化。'); replace(p[i],squares[j].index,squares[j].index+1,'■');
       }
-    }
   }
   const values = {};
   for (const [key,label,required] of inputs) {

@@ -9,7 +9,12 @@ document.querySelector('.skip').addEventListener('click', event => {
 });
 let sequence = 0;
 let workbenchExpanded = false;
-async function render() {
+let activePath = '';
+const retainedRoutes = new Set(['/forms/generate', '/quotes', '/review']);
+// Keep work in this tab only; the detached controls retain their live state.
+const workInProgress = new Map();
+
+async function render(event) {
   const request = ++sequence;
   let path = location.hash.slice(1) || '/';
   if (path === '/forms') path = '/forms/generate';
@@ -32,6 +37,22 @@ async function render() {
     toggle.setAttribute('aria-expanded', String(workbenchExpanded));
     navigation.querySelector('#workbench-children').hidden = !workbenchExpanded;
   };
+  const refresh = event?.type === 'runwell:refresh';
+  if (event?.detail?.resetProgress) workInProgress.clear();
+  if (!refresh && activePath === path) return;
+  if (activePath && activePath !== path && !event?.detail?.resetProgress && retainedRoutes.has(activePath)) {
+    const content = document.createDocumentFragment();
+    content.append(...view.childNodes);
+    workInProgress.set(activePath, content);
+  }
+  activePath = '';
+  if (!refresh && workInProgress.has(path)) {
+    view.replaceChildren(workInProgress.get(path));
+    workInProgress.delete(path);
+    activePath = path;
+    document.title = (view.querySelector('h1')?.textContent || '工作台') + ' · 润网';
+    return;
+  }
   view.innerHTML = '<p role="status">正在加载…</p>';
   try {
     let html;
@@ -45,6 +66,7 @@ async function render() {
     view.innerHTML = html;
     if(path==='/settings')bindSettings(view);
     else bindForms();
+    activePath = path;
     document.title = `${view.querySelector('h1')?.textContent || '工作台'} · 润网`;
   } catch {
     if (request !== sequence) return;
@@ -53,4 +75,5 @@ async function render() {
   }
 }
 window.addEventListener('hashchange', render);
+window.addEventListener('runwell:refresh', render);
 render();

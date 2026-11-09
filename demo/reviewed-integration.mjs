@@ -27,9 +27,9 @@ export function reviewedInfo(plan) {
 }
 
 export function reviewedControls(id) {
-  if(id==='business-guarantee') return {blank:true,groups:[],inputs:guaranteeFields.map(([key,label,,required=true,type])=>[
-    key==='company_name'?'guarantee_company':key==='extra_credit_code'?'guarantee_credit':key,label,required,type
-  ])};
+  if(id==='business-guarantee') return {blank:true,groups:[],inputs:[['guarantee_email','* E-MAIL',true,'email'],...guaranteeFields.map(([key,label,,required=true,type])=>[
+    key==='company_name'?'guarantee_company':key==='extra_credit_code'?'guarantee_credit':key,key==='guarantor_id'?'* '+label:label,required,type
+  ])]};
   return {groups:[
     {key:'choice_billing',label:'账单地址方式',required:true,options:['同公司地址','其他地址（下载后手工填入）']},
     ...(['business-ai-v1','business-ai-v2-voice'].includes(id)?[{key:'service_type_choice',label:'授权书实际办理业务',required:true,options:['宽带','宽带、固话','宽带、手机','宽带、固话、手机']}]:[])
@@ -37,6 +37,7 @@ export function reviewedControls(id) {
     ['extra_credit_code','统一社会信用代码',true],['extra_industry','企业所属行业',true],
     ['extra_company_size','企业规模',true],['extra_computer_count','计算机数量',true],
     ['install_zip','安装邮编',true],['billing_zip','账单邮编',true],['job_title','经办人职务'],['fax','传真'],
+    ['security_name','信息安全责任人姓名',true],['security_role','信息安全责任人职务',true],['security_phone','信息安全责任人联系方式',true],
     ['service_use','业务用途',true],['application_date','申请日期',true,'date']
   ]};
 }
@@ -46,7 +47,8 @@ export async function generateReviewed(tariff,bytes,customer) {
   const id=tariff.reviewed_id, controls=reviewedControls(id);
   const values=Object.fromEntries(controls.inputs.map(([key])=>[key,clean(customer[key])]));
   if(controls.blank){
-    const {guarantee_company,guarantee_credit,guarantee_date,...fields}=values;
+    const {guarantee_company,guarantee_credit,guarantee_date,guarantee_email,...fields}=values;
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guarantee_email))throw new Error('请填写有效的 E-MAIL。');
     return renderReviewed(id,bytes,{...fields,company_name:guarantee_company,extra_credit_code:guarantee_credit,application_date:guarantee_date});
   }
   for(const key of ['company_name','install_address','contact_name','phone','id_number','email','payment_method']) values[key]=clean(customer[key]);

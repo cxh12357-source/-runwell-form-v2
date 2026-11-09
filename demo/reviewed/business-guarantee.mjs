@@ -21,6 +21,8 @@ export function buildGuaranteeEdits(bytes,values,{unzipSync,sax}){
   const locations=[[3,'company_name',/^_+\($/],[6,'extra_credit_code',/^_+\)$/],[10,'business_number',/^_+$/]],edits=[];
   for(const [index,key,pattern] of locations){const text=p.texts[index],value=values[key]||'';if(!pattern.test(text||''))throw Error('担保书空白位置不符。');if(!value)continue;const length=text.match(/^_+/)[0].length;edits.push({part:'word/document.xml',paragraph:4,text:index,expected:text,start:0,end:length,value});}
   for(const [index,key,label] of [[7,'guarantor_name','担保人名称'],[9,'guarantor_id','担保人证件号码'],[11,'guarantor_address','担保人联系地址'],[13,'guarantor_phone','担保人联系电话']]){const p=pars[index];if(!p||p.texts.length||pars[index-1]?.texts.join('')!==label)throw Error('担保人字段位置不符。');edits.push({part:'word/document.xml',paragraph:index,kind:'emptyParagraph',expectedXml:p.raw,value:values[key],format:{font:'宋体',sizeHalfPoints:30,bold:false}});}
+  const idLabel=pars[8].texts[0];
+  edits.push({part:'word/document.xml',paragraph:8,text:0,expected:idLabel,start:0,end:0,value:'*'});
   if(values.application_date){const p=pars[17];if(p?.texts.join('')!=='日期：')throw Error('担保日期位置不符。');edits.push({part:'word/document.xml',paragraph:17,text:0,expected:'日期：',start:3,end:3,value:values.application_date});}
   return edits;
 }

@@ -1,3 +1,4 @@
+import { dashboardTrend } from './dashboard-trend.js';
 import { escape as esc, get } from '../../lib/api.js';
 import { request, status, refresh, hasToken, setToken, downloadControl } from './shared.js';
 import { bindGeneration, generation } from './generate.js';
@@ -14,11 +15,29 @@ function history(rows, catalog, hosted, fileRoot = '/records/', fileLabel = '下
 }
 
 const periods=[['week','本周'],['month','本月'],['all','累计'],['custom','自定义日期']];
+function dashboardChart(board, employee) {
+  const max = Math.max(1, ...board.employees.map(person => person.forms_count));
+  return '<section class="dashboard-chart" aria-labelledby="dashboard-chart-title">' +
+    '<h3 id="dashboard-chart-title">Word 生成次数</h3>' +
+    (!board.records.length ? '<p class="hint">所选期间暂无 Word 生成记录。</p>' : '') +
+    '<ul class="dashboard-bars">' + board.employees.map(person => {
+      const label = board.scope === 'team'
+        ? '<button type="button" class="dashboard-employee" data-employee="' + esc(person.id) + '" aria-pressed="' +
+          (employee === person.id) + '">' + esc(person.id) + '</button>'
+        : '<span>' + esc(person.id) + '</span>';
+      return '<li>' + label + '<svg class="dashboard-bar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true" focusable="false">' +
+        '<rect width="100" height="10" class="dashboard-bar-track"/><rect width="' + (person.forms_count / max * 100) +
+        '" height="10" class="dashboard-bar-value"/></svg><strong>' + person.forms_count + '<span> 次</span></strong></li>';
+    }).join('') + '</ul></section>';
+}
+
 function dashboardResults(board, employee) {
   const {period,offset,from,to}=board.range;
   const label=period==='all'?'累计':period==='custom'?'自定义日期':offset===0?(period==='week'?'本周':'本月'):(period==='week'?'往期周':'往期月');
   return '<p class="dashboard-range"><strong>'+label+'</strong>'+(from?' · '+esc(from)+' 至 '+esc(to):' · 全部时间')+'（上海时间）</p>'+
     '<p class="dashboard-total"><strong>'+board.records.length+'</strong> 次 Word 生成'+(board.scope==='team'?' · '+board.employees.length+' 个账号':'')+'</p>'+
+    dashboardChart(board, employee) +
+    '<section id="dashboard-trend" class="dashboard-chart" aria-labelledby="dashboard-trend-title">' + dashboardTrend(board, employee) + '</section>' +
     '<div class="table-wrap"><table class="dashboard-summary"><thead><tr><th>账号</th><th>报价次数</th><th>Word 生成次数</th></tr></thead><tbody>'+
     board.employees.map(person=>'<tr><td>'+(board.scope==='team'?
       '<button type="button" class="dashboard-employee" data-employee="'+esc(person.id)+'" aria-pressed="'+(employee===person.id)+'">'+esc(person.id)+'</button>':
@@ -90,6 +109,7 @@ function bindDashboard(root,state) {
       if(offset>=0 && offset<=520)void load({period:selected,offset:String(offset)});
     } else if(button.dataset.employee || button.hasAttribute('data-clear-employee')){
       employee=button.dataset.employee||'';
+      results.querySelector('#dashboard-trend').innerHTML=dashboardTrend(board,employee);
       for(const row of results.querySelectorAll('[data-employee]'))row.setAttribute('aria-pressed',String(row.dataset.employee===employee));
       details.innerHTML=dashboardDetails(board,state.catalog,employee);
       if(!employee)results.querySelector('[data-employee]')?.focus({preventScroll:true});
@@ -172,12 +192,12 @@ export function bindPreview() {
           credential = loginForm.elements.token.value.trim();
           await request('/workspace', {credential});
         }
-        if (root.isConnected) { setToken(credential); refresh(); }
+        if (root.isConnected) { setToken(credential); refresh(true); }
       } catch (error) { status(root, error.message); } finally { submit.disabled = false; }
     };
     return;
   }
-  root.querySelector('#forms-exit').onclick = () => { setToken(''); refresh(); };
+  root.querySelector('#forms-exit').onclick = () => { setToken(''); refresh(true); };
   root.addEventListener('click', async event => {
     const button = event.target.closest('button[data-file]');
     if (!button) return;

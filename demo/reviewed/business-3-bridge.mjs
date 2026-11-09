@@ -5,10 +5,11 @@ import {fillOriginalDocx} from './full-word.mjs';
 import {estimateBusiness3Layout} from './business-3-layout.mjs';
 import {BusinessInputError} from './business-input-error.mjs';
 import {buildAuthorizationEdits} from './business-authorization.mjs';
-import {buildFirstPageEdits} from './first-page-fields.mjs';
+import {buildFirstPageEdits,materializeFirstPageBoxes} from './first-page-fields.mjs';
 const W='http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const REQUIRED=['company_name','extra_credit_code','extra_industry','install_address','contact_name','id_number','phone','email','extra_company_size','extra_computer_count'];
-const ALLOWED=new Set([...REQUIRED,'cycle','billing_mode','manual_billing_ack','payment_method','bank_account','install_zip','billing_zip','job_title','fax','service_use','application_date','service_type']);
+const SECURITY={security_name:'信息安全责任人姓名',security_role:'信息安全责任人职务',security_phone:'信息安全责任人联系方式'};
+const ALLOWED=new Set([...REQUIRED,...Object.keys(SECURITY),'cycle','billing_mode','manual_billing_ack','payment_method','bank_account','install_zip','billing_zip','job_title','fax','service_use','application_date','service_type']);
 const FIELD_NAMES={company_name:'企业全称',extra_credit_code:'统一社会信用代码',extra_industry:'企业所属行业',install_address:'安装地址',contact_name:'经办人姓名',id_number:'身份证号',phone:'经办人手机号',email:'电子邮箱',extra_company_size:'企业规模',extra_computer_count:'企业计算机数量'};
 const digest=async bytes=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
 
@@ -17,6 +18,10 @@ export function validateBusiness3Values(values, {requireSupplemental=true}={}) {
   for(const key of REQUIRED) {
     const value=values[key];
     if(typeof value!=='string' || !value || value!==value.trim() || value.length>200 || !value.isWellFormed() || /[\x00-\x1f\x7f\ufffe\uffff]/u.test(value)) throw new BusinessInputError('请填写并核对'+FIELD_NAMES[key]+'。');
+  }
+  if(requireSupplemental)for(const [key,label] of Object.entries(SECURITY)){
+    const value=values[key];
+    if(typeof value!=='string' || !value || value!==value.trim() || value.length>40 || !value.isWellFormed() || /[\x00-\x1f\x7f\ufffe\uffff]/u.test(value))throw new BusinessInputError('请填写并核对'+label+'。');
   }
   if(requireSupplemental && (typeof values.service_use!=='string' || !values.service_use || values.service_use!==values.service_use.trim() || values.service_use.length>200 || !values.service_use.isWellFormed() || /[\x00-\x1f\x7f\ufffe\uffff]/u.test(values.service_use))) throw new BusinessInputError('请填写并核对业务用途。');
   if(requireSupplemental && (typeof values.application_date!=='string' || !/^\d{4}-\d{2}-\d{2}$/.test(values.application_date) || !Number.isFinite(Date.parse(values.application_date+'T00:00:00Z')) || new Date(values.application_date+'T00:00:00Z').toISOString().slice(0,10)!==values.application_date)) throw new BusinessInputError('请填写有效的申请日期。');
@@ -48,27 +53,6 @@ async function paragraphs(xml,wanted,sax) {
   parser.write(xml).close();return found;
 }
 
-async function markNumbers(bytes,spec,targets,dependencies) {
-  const {unzipSync,zipSync,sax}=dependencies,files=unzipSync(bytes),dec=new TextDecoder('utf-8',{fatal:true}),enc=new TextEncoder();
-  if(!files['word/document.xml']||!files['word/numbering.xml'])throw new Error('原表编号缺失。');
-  const doc=dec.decode(files['word/document.xml']), numbering=dec.decode(files['word/numbering.xml']);
-  const found=await paragraphs(doc,new Set(targets.map(x=>x.paragraph)),sax), selected=[];
-  for(const item of targets){const p=found.get(item.paragraph);if(!p || await digest(enc.encode(p.raw))!==item.paragraph_sha256 || p.raw.split('<w:numId w:val="1"/>').length!==2)throw new Error('原表勾选位置不符。');selected.push(p);}
-  const abstract=spec.abstract_id,pattern=new RegExp('<w:abstractNum\\b[^>]*w:abstractNumId="'+abstract+'"[^>]*>[\\s\\S]*?<\\/w:abstractNum>','g'),blocks=[...numbering.matchAll(pattern)];
-  const originalNum=`<w:num w:numId="1"><w:abstractNumId w:val="${abstract}"/></w:num>`;
-  if(blocks.length!==1 || numbering.split(originalNum).length!==2 || numbering.split('</w:numbering>').length!==2) throw new Error('原表编号结构不符。');
-  const levels=[...blocks[0][0].matchAll(/<w:lvl\b[^>]*w:ilvl="0"[^>]*>[\s\S]*?<\/w:lvl>/g)];
-  if(levels.length!==1 || levels[0][0].split('<w:lvlText w:val="□"/>').length!==2) throw new Error('原表方框定义不符。');
-  const ids=[...numbering.matchAll(/<w:num\s+w:numId="(\d+)"/g)].map(m=>Number(m[1]));const id=Math.max(0,...ids)+1;
-  if(!Number.isSafeInteger(id)||id>2147483647)throw new Error('编号无效。');
-  let updated=doc;
-  for(const p of selected.sort((a,b)=>b.start-a.start)) updated=updated.slice(0,p.start)+p.raw.replace('<w:numId w:val="1"/>',`<w:numId w:val="${id}"/>`)+updated.slice(p.end);
-  const level=levels[0][0].replace('<w:lvlText w:val="□"/>','<w:lvlText w:val="■"/>');
-  const addition=`<w:num w:numId="${id}"><w:abstractNumId w:val="${abstract}"/><w:lvlOverride w:ilvl="0">${level}</w:lvlOverride></w:num>`;
-  files['word/document.xml']=enc.encode(updated);files['word/numbering.xml']=enc.encode(numbering.replace('</w:numbering>',addition+'</w:numbering>'));
-  return zipSync(files,{level:6});
-}
-
 export async function fillReviewedBusiness3(templateId,bytes,values,dependencies) {
   if(typeof templateId!=='string' || !Object.hasOwn(specs,templateId))throw new Error('请选择已核对的原表。');
   validateBusiness3Values(values);
@@ -84,24 +68,16 @@ export async function fillReviewedBusiness3(templateId,bytes,values,dependencies
   for(let i=0;i<REQUIRED.length;i++)if(Object.hasOwn(fits,REQUIRED[i])) edits[i].fitTextTwips=fits[REQUIRED[i]];
   const {unzipSync,sax}=dependencies,parts=unzipSync(bytes),raw=parts['word/document.xml'];
   if(!raw)throw new Error('原表正文缺失。');
-  const xml=new TextDecoder('utf-8',{fatal:true}).decode(raw),cycle=spec.cycles[values.cycle], selectedPayment=spec[values.payment_method];
+  const xml=new TextDecoder('utf-8',{fatal:true}).decode(raw),cycle=spec.cycles[values.cycle];
   if(templateId.endsWith('-no-voice')) edits.push(...buildAuthorizationEdits(bytes,{...values,service_type:'宽带',application_type:'新装'},dependencies));
   edits.push(...buildFirstPageEdits(xml,values,spec,dependencies));
-  const needed=[cycle,selectedPayment,...(values.billing_mode==='same_company'?[spec.billing_same]:[])];
+  const needed=[cycle];
   const found=await paragraphs(xml,new Set(needed.map(x=>x.paragraph)),sax);
   async function checked(item){const p=found.get(item.paragraph),t=p?.texts[item.text];if(!p || typeof t!=='string' || await digest(new TextEncoder().encode(p.raw))!==item.paragraph_sha256 || await digest(new TextEncoder().encode(t))!==item.text_sha256)throw new Error('原表文字位置不符。');return t;}
   const priceText=await checked(cycle);
   if(priceText.slice(cycle.start,cycle.end)!=='□')throw new Error('套餐选项不符。');
   edits.push({part:'word/document.xml',paragraph:cycle.paragraph,text:cycle.text,expected:priceText,start:cycle.start,end:cycle.end,value:'■'});
-  const paymentText=await checked(selectedPayment);
-  if(values.payment_method==='collection') {
-    if(!/^托\s*收\s*银行账号[：:]\s*$/.test(paymentText))throw new Error('托收账号位置不符。');
-    edits.push({part:'word/document.xml',paragraph:selectedPayment.paragraph,text:selectedPayment.text,expected:paymentText,start:paymentText.length,end:paymentText.length,value:values.bank_account});
-  }
-  const targets=[selectedPayment];
-  if(values.billing_mode==='same_company'){await checked(spec.billing_same);targets.push(spec.billing_same);}
-  const marked=await markNumbers(bytes,spec,targets,dependencies);
-  const file=fillOriginalDocx(marked,edits,dependencies);
+  const file=materializeFirstPageBoxes(fillOriginalDocx(bytes,edits,dependencies),values,spec,dependencies);
   return {file,manualActions:values.billing_mode==='other_manual'?['billing_address']:[],layoutReviewRequired:true,
     unmappedFields:['voice_identity','line_count','service_options','signature']};
 }

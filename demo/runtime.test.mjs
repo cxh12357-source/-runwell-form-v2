@@ -116,9 +116,9 @@ test('免登录运行：拒绝缺项、生成 Word、刷新后下载、上传及
       assert.equal(Boolean(matched.candidates[0].reviewed_controls.blank),blank);
       const common={company_name:'虚构测试企业',extra_credit_code:'000000000000000000'};
       const fields=blank?{guarantee_company:common.company_name,guarantee_credit:common.extra_credit_code,guarantor_name:'虚构担保人',
-        guarantor_id:'000000000000000000',guarantor_address:'虚构路一号',guarantor_phone:'10000000000'}:
+        guarantee_email:'a@b.invalid',guarantor_id:'000000000000000000',guarantor_address:'虚构路一号',guarantor_phone:'10000000000'}:
         {...customer,...common,email:'a@b.invalid',extra_industry:'物流',extra_company_size:'31-80人',extra_computer_count:'16-40台',
-          install_zip:'200001',billing_zip:'200002',application_date:'2026-11-09',service_use:'办公测试',choice_billing:'0',service_type_choice:'1'};
+          install_zip:'200001',billing_zip:'200002',application_date:'2026-11-09',security_name:'测试安全员',security_role:'主管',security_phone:'10000000000',service_use:'办公测试',choice_billing:'0',service_type_choice:'1'};
       const payload={selection:chosen,template_id:added.id,match_token:matched.match_token,request_id:crypto.randomUUID(),customer:fields};
       const record=await result(call('/generate','POST',payload));
       assert.ok(record.review.includes(blank?'guarantee_signature':'bank_name'));
