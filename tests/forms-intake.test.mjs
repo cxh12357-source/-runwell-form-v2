@@ -87,3 +87,27 @@ test('手续材料只在生成结果中按表单语音属性显示，不猜未�
   assert.doesNotMatch(generatedMaterials({...tariff,reviewed_id:'business-ai-v1',voice_required:false}),/复制手续材料提示/);
   assert.equal(generatedMaterials({...tariff,reviewed_id:'business-guarantee'}),'');
 });
+
+test('编号回复中，带分隔符的手机号、带空格的邮箱标签和经办人姓名分别填入', () => {
+  const reply = `1、企业全称：虚构测试企业
+2、安装地址：虚构一路1号
+3、账单地址：同安装地址
+4、选择套餐和资费：商务专线（不含语音），100M 上下行对称带宽
+5、经办人：测试甲
+6、经办人联系电话（手机）：100-0000-0001
+7、经办人身份证号码：000000000000000000
+8、经办人 E-MAIL：agent+qa@example.invalid
+9、付款方式：现金`;
+  const parsed = parseReply(reply);
+  for (const [key, expected] of Object.entries({
+    contact_name: '测试甲', phone: '10000000001', email: 'agent+qa@example.invalid'
+  })) {
+    assert.deepEqual(parsed[key], [expected]);
+    assert.ok(validValue(key, parsed[key][0]));
+  }
+  assert.deepEqual(parseReply('经办人　Email：qa@example.invalid'), {email: ['qa@example.invalid']});
+  assert.deepEqual(parseReply('100 0000 0001，手机号：100－0000－0001').phone, ['10000000001']);
+  assert.deepEqual(parseReply('100-0000-0001@example.invalid'), {email: ['100-0000-0001@example.invalid']});
+  assert.deepEqual(parseReply('手机号：100-0000-0001，手机号：100-0000-0002').phone, ['10000000001', '10000000002']);
+  assert.equal(validValue('phone', parseReply('手机：100-000x-0001').phone[0]), false);
+});

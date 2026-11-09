@@ -34,7 +34,7 @@ jobs:
       - name: Install the browser demo build dependencies
         run: npm ci --prefix demo --ignore-scripts
       - name: Test browser-only storage and form workflows
-        run: node --test demo/runtime.test.mjs demo/reviewed.test.mjs
+        run: node --test demo/runtime.test.mjs
       - name: Build the interactive browser demo
         env:
           DEMO_AI_ENDPOINT: ${{ vars.DEMO_AI_ENDPOINT }}

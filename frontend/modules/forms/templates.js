@@ -14,7 +14,7 @@ export function templatesView({ rows, workspace, hosted }) {
     '<textarea name="mapping" aria-label="字段映射 JSON" rows="14" required style="width:100%;box-sizing:border-box">' + esc(JSON.stringify(mapping, null, 2)) +
     '</textarea></details><button class="button">上传新版本</button></form><div class="divider"></div><h3>模板目录</h3>' +
     '<p class="hint">可下载样表核对占位符。新上传的版本需要手动启用。</p>' +
-    (workspace.smart_import && rows.some(t=>!t.custom) ? '<button id="remove-samples" type="button">清除内置测试套餐</button><div id="remove-samples-confirm" hidden><p>清除当前浏览器的内置样表？自定义模板和历史 Word 会保留。</p><button type="button" data-cancel>取消</button> <button type="button" data-confirm>确认清除</button></div>' : '') +
+    (workspace.smart_import && !hosted && rows.some(t=>!t.custom) ? '<button id="remove-samples" type="button">清除内置测试套餐</button><div id="remove-samples-confirm" hidden><p>清除当前浏览器的内置样表？自定义模板和历史 Word 会保留。</p><button type="button" data-cancel>取消</button> <button type="button" data-confirm>确认清除</button></div>' : '') +
     '<div class="table-wrap"><table><thead><tr><th>套餐</th><th>模板</th><th>版本</th>'+(workspace.smart_import?'<th>录入时间</th>':'')+'<th>状态</th><th>操作</th></tr></thead><tbody id="template-rows">' +
     rows.map(t => {
       const tariff=workspace.tariffs.find(a=>a.template_id===t.id) || workspace.tariffs.find(a => a.id === t.tariff_id);
@@ -42,7 +42,7 @@ function readFile(file) {
 export function bindTemplates(root, state) {
   const form = root.querySelector('#template-form');
   const selection = bindClassification(form, { ...state, workspace: { ...state.workspace, tariffs: state.workspace.tariffs.filter(t=>!t.carrier_profile && !t.reviewed_id) } });
-  if(state.workspace.smart_import) bindSmartImport(root);
+  if(state.workspace.smart_import) bindSmartImport(root, state.workspace.labels);
   const clearSamples=root.querySelector('#remove-samples');
   if(clearSamples){
     const panel=root.querySelector('#remove-samples-confirm');
@@ -121,7 +121,7 @@ export function bindTemplates(root, state) {
   };
 }
 
-function bindSmartImport(root) {
+function bindSmartImport(root, labels) {
   const drop=root.querySelector('#smart-drop'), picker=root.querySelector('#smart-file'), preview=root.querySelector('#smart-preview');
   const section=drop.closest('.smart-import'), feedback=root.querySelector('#smart-status');
   const tell=message=>{feedback.textContent=message;};
@@ -233,15 +233,17 @@ function bindSmartImport(root) {
       const suggested=conflict?'':(result.discountNote || discount)?'discount':standard?'standard':'';
       const basis=result.discountNote?'基础套餐备注':'文件名';
       const confirmVariant=result.variantRequired||discount;
-      tell(!confirmVariant?'解析成功。员工生成表单时按客户需求选择资费。':
+      tell(!confirmVariant?'请核对下列资费。确认后将一并保存套餐和模板。':
         conflict?'基础套餐备注或文件名中的折扣信息有冲突，请核对后选择。':
         suggested?'已按'+basis+'预选模板类型，请核对后导入。':'未找到明确的折扣标记，请确认模板类型。');
       preview.innerHTML=summary+'<p>识别到：<strong>'+esc(result.name)+'</strong> · 商务专线／不带语音／新装</p>'+
-        '<p>已定位 '+Number(result.tags.length)+' 个占位符，所有方框默认留空。</p><ul>'+
+        '<details><summary>核对已识别字段（'+Number(result.tags.length)+'）</summary><ul>'+
+        result.tags.map(key=>'<li>'+esc(result.field_labels?.[key]||labels[key]||key)+'</li>').join('')+
+        '</ul></details><p>基础资费（每线）</p><ul>'+
         result.rates.map(r=>'<li>'+esc(r.bandwidth+' · '+r.amount+' 元/'+r.cycle+'/线')+'</li>').join('')+
         '</ul><form id="smart-confirm">'+(confirmVariant?
           '<label>确认模板类型<select name="variant" required><option value="">请选择打折或不打折</option><option value="discount">100M 打折、不带语音</option><option value="standard">100M 不打折、不带语音</option></select></label>':'')+
-        '<button class="button">导入模板</button></form>';
+        '<button class="button">确认上述资费并导入</button></form>';
       const confirm=preview.querySelector('form');
       appendAi(result.metadata,ticket);
       if(confirm.elements.variant)confirm.elements.variant.value=suggested;
@@ -251,9 +253,14 @@ function bindSmartImport(root) {
   function bindConfirm(confirm,file,filename){
       confirm.onsubmit=async event=>{
         event.preventDefault();
+        if (picker.disabled || ticket !== epoch) return;
         const button=confirm.querySelector('button');button.disabled=true;picker.disabled=true;
+        tell('正在保存模板和套餐…');
         try {
-          const saved=await request('/templates/import',{method:'POST',data:{file,filename,variant:confirm.elements.variant?.value}});
+          const saved=await request('/templates/import',{method:'POST',data:{
+            file, filename, variant:confirm.elements.variant?.value,
+            confirmed_rates:result.rates
+          }});
           if(root.isConnected){
             const notice=saved.duplicate?'该版式模板已导入，未重复新增。':'已录入一份模板。请在模板目录启用，员工即可在表单生成页选择并匹配。';
             sessionStorage.setItem('runwell-smart-import-notice',notice);
