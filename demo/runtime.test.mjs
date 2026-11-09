@@ -56,7 +56,6 @@ test('免登录运行：拒绝缺项、生成 Word、刷新后下载、上传及
   const imported = (await result(call('/templates'))).find(t => t.id === added.id);
   assert.ok(imported.custom);
   assert.equal(new Date(imported.imported_at).toISOString(), imported.imported_at);
-  assert.equal((await call('/templates/' + sampleId, 'DELETE')).status, 403);
   await result(call('/templates/' + added.id, 'PATCH', { active: true }));
   assert.equal((await result(call('/templates'))).find(t => t.id === added.id).imported_at, imported.imported_at);
   const ambiguous = await match();
@@ -75,6 +74,17 @@ test('免登录运行：拒绝缺项、生成 Word、刷新后下载、上传及
   assert.equal((await call('/templates/' + added.id + '/file')).status, 404);
   assert.equal((await call('/records/' + customRecord.id + '/file')).status, 200);
   assert.ok((await result(call('/workspace'))).tariffs.some(t => t.id === id));
+  await result(call('/templates/'+sampleId,'PATCH',{active:false}));
+  await result(call('/templates/'+sampleId,'DELETE'));
+  assert.equal((await call('/templates/'+sampleId+'/file')).status,404);
+  assert.ok(!(await result(call('/workspace'))).tariffs.some(t=>t.id===id));
+  assert.ok((await result(call('/templates'))).some(t=>!t.custom));
+  const now=Date.now;
+  try {
+    Date.now=()=>now()+9*60*60*1000;
+    assert.ok(!(await result(call('/templates'))).some(t=>t.id===sampleId));
+    assert.equal((await call('/records/'+generated.id+'/file')).status,200);
+  } finally { Date.now=now; }
   await result(call('/templates/samples', 'DELETE'));
   ({ localFetch } = await import(source + '#samples-cleared'));
   assert.deepEqual(await result(call('/templates')), []);

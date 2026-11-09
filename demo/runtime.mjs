@@ -9,6 +9,7 @@ const name = 'runwell-browser-demo-v1';
 const limit = 32 * 1024 * 1024;
 const schema = `
   CREATE TABLE IF NOT EXISTS demo_settings (tenant TEXT PRIMARY KEY, hide_samples INTEGER NOT NULL);
+  CREATE TABLE IF NOT EXISTS demo_deleted_samples (tenant TEXT NOT NULL,id TEXT NOT NULL,PRIMARY KEY(tenant,id));
   CREATE TABLE IF NOT EXISTS demo_tariffs (tenant TEXT NOT NULL,id TEXT NOT NULL,data TEXT NOT NULL,PRIMARY KEY(tenant,id));
   CREATE TABLE IF NOT EXISTS qa_sessions (hash TEXT PRIMARY KEY, tenant TEXT NOT NULL, actor TEXT NOT NULL, expires INTEGER NOT NULL);
   CREATE TABLE IF NOT EXISTS qa_templates (tenant TEXT NOT NULL, id TEXT NOT NULL, tariff_id TEXT NOT NULL, name TEXT NOT NULL,

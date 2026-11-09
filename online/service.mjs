@@ -33,8 +33,9 @@ async function directory(db,tenant,plugin){
   if(!plugin)return tariffs;
   const rows=await db.prepare('SELECT data FROM demo_tariffs WHERE tenant=? ORDER BY id').bind(tenant).all();
   const hidden=await db.prepare('SELECT hide_samples FROM demo_settings WHERE tenant=?').bind(tenant).first();
-  const custom=hidden && await db.prepare('SELECT DISTINCT tariff_id FROM qa_templates WHERE tenant=? AND object_key IS NOT NULL').bind(tenant).all();
-  return [...tariffs.filter(t=>!hidden || custom.results.some(r=>r.tariff_id===t.id)),...rows.results.map(row=>JSON.parse(row.data))];
+  const deleted=new Set((await db.prepare('SELECT id FROM demo_deleted_samples WHERE tenant=?').bind(tenant).all()).results.map(r=>r.id));
+  const custom=hidden || deleted.size ? (await db.prepare('SELECT DISTINCT tariff_id FROM qa_templates WHERE tenant=? AND object_key IS NOT NULL').bind(tenant).all()).results : [];
+  return [...tariffs.filter(t=>(!hidden && !deleted.has(t.id+'-sample')) || custom.some(r=>r.tariff_id===t.id)),...rows.results.map(row=>JSON.parse(row.data))];
 }
 async function candidates(selection,db,tenant,plugin){
   insist(isObject(selection),'请选择业务和套餐。');
@@ -73,7 +74,8 @@ async function startSession(req,db,tenant,plugin) {
     db.prepare('INSERT INTO qa_sessions(hash,tenant,actor,expires) VALUES(?,?,?,?)').bind(await signature(token),tenant,account,now+8*60*60*1000)
   ];
   const hidden=plugin && await db.prepare('SELECT hide_samples FROM demo_settings WHERE tenant=?').bind(tenant).first();
-  for(const t of hidden?[]:tariffs){
+  const deleted=plugin ? new Set((await db.prepare('SELECT id FROM demo_deleted_samples WHERE tenant=?').bind(tenant).all()).results.map(r=>r.id)) : new Set();
+  for(const t of hidden?[]:tariffs.filter(t=>!deleted.has(t.id+'-sample'))){
     statements.push(db.prepare('INSERT OR IGNORE INTO qa_templates(tenant,id,tariff_id,name,revision,active,mapping) VALUES(?,?,?,?,?,1,?)')
       .bind(tenant,t.id+'-sample',t.id,t.name+' 新装样表','demo-1',JSON.stringify(sampleMapping(t))));
   }
@@ -285,7 +287,13 @@ export async function handleForms(req,env) {
         const id=item[1];
         const t=await db.prepare('SELECT object_key,tariff_id FROM qa_templates WHERE tenant=? AND id=?').bind(tenant,id).first();
         insist(t,'找不到模板。',404);
-        insist(t.object_key,'内置样表不能删除。',403);
+        if(t.object_key===null){
+          await db.batch([
+            db.prepare('INSERT OR IGNORE INTO demo_deleted_samples(tenant,id) VALUES(?,?)').bind(tenant,id),
+            db.prepare('DELETE FROM qa_templates WHERE tenant=? AND id=? AND object_key IS NULL').bind(tenant,id)
+          ]);
+          return json({id});
+        }
         const [deleted]=await db.batch([
           db.prepare('DELETE FROM qa_templates WHERE tenant=? AND id=? AND object_key=?').bind(tenant,id,t.object_key),
           db.prepare("DELETE FROM demo_tariffs WHERE tenant=? AND json_extract(data,'$.template_id')=?").bind(tenant,id)

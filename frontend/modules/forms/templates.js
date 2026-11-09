@@ -26,7 +26,7 @@ export function templatesView({ rows, workspace, hosted }) {
       '<td data-template-state aria-live="polite">' + (t.active ? '已启用' : '已停用') + '</td><td>' +
       '<button type="button" data-active="' + String(!t.active) + '" data-id="' + esc(t.id) + '">' + (t.active ? '停用' : '启用') +
       '</button> ' + downloadControl('/templates/' + t.id + '/file', '下载模板', hosted) +
-      (t.custom ? ' <button type="button" data-delete-open>删除</button><div class="template-delete-confirm" hidden>' +
+      (workspace.smart_import ? ' <button type="button" data-delete-open>删除</button><div class="template-delete-confirm" hidden>' +
       '<p>删除「'+esc(t.name)+'」版本 '+esc(t.revision)+'？已生成的 Word 仍可从历史记录下载。</p>' +
       '<button type="button" data-delete-cancel>取消</button> <button type="button" data-delete-confirm="'+esc(t.id)+'">确认删除</button></div>' : '') +
       '<details><summary>'+(tariff?.reviewed_id?'查看填写规则':'查看映射')+'</summary><pre>' + esc(tariff?.reviewed_id?'按已核验的 Word 版式填写；原表不需要自行设置占位符。':JSON.stringify(t.mapping, null, 2)) + '</pre></details><div data-template-error aria-live="polite"></div></td></tr>'; }).join('') + '</tbody></table></div>';
