@@ -1,5 +1,5 @@
 import { catalog } from './data.mjs';
-import { checkTariffMapping, sampleMapping, voiceVersion, FormError, insist, labels, match, tariffs, validateCustomer, validateMapping, version } from './rules.mjs';
+import { checkTariffMapping, sampleMapping, selectedDiscount, voiceVersion, FormError, insist, labels, match, tariffs, validateCustomer, validateMapping, version, dashboardPeriod, workDashboard } from './rules.mjs';
 import { mime, renderWord } from './word.mjs';
 import sample from './sample.json' with {type:'json'};
 
@@ -21,12 +21,12 @@ function listedForBusiness(req,env) {
   const emailPattern=/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
   return email && addresses.includes(email) && addresses.every(s=>s.length<=254 && emailPattern.test(s));
 }
-async function body(req) {
+async function body(req,limit=750000) {
   insist(req.headers.get('content-type')?.split(';')[0]==='application/json','请提交 JSON 数据。',415);
   const reader=req.body?.getReader();insist(reader,'缺少请求内容。',400);
   let size=0;const chunks=[];
   for(;;) {const {done,value}=await reader.read();if(done)break;
-    size+=value.length;if(size>750000){await reader.cancel();throw new FormError('上传内容过大。',413);}chunks.push(value);}
+    size+=value.length;if(size>limit){await reader.cancel();throw new FormError('上传内容过大。',413);}chunks.push(value);}
   let data;
   try{data=JSON.parse(await new Blob(chunks).text());}catch{throw new FormError('JSON 内容无效。',400);}
   insist(isObject(data),'请求内容格式错误。',400);return data;
@@ -50,8 +50,9 @@ async function directory(db,tenant,plugin,includeInactive=false){
   }
   const rows=await db.prepare('SELECT data FROM demo_tariffs WHERE tenant=? ORDER BY id').bind(tenant).all();
   const hidden=await db.prepare('SELECT hide_samples FROM demo_settings WHERE tenant=?').bind(tenant).first();
-  const custom=hidden && await db.prepare('SELECT DISTINCT tariff_id FROM qa_templates WHERE tenant=? AND object_key IS NOT NULL').bind(tenant).all();
-  return [...tariffs.filter(t=>!hidden || custom.results.some(r=>r.tariff_id===t.id)),...rows.results.map(row=>JSON.parse(row.data))];
+  const deleted=new Set((await db.prepare('SELECT id FROM demo_deleted_samples WHERE tenant=?').bind(tenant).all()).results.map(r=>r.id));
+  const custom=hidden || deleted.size ? (await db.prepare('SELECT DISTINCT tariff_id FROM qa_templates WHERE tenant=? AND object_key IS NOT NULL').bind(tenant).all()).results : [];
+  return [...tariffs.filter(t=>(!hidden && !deleted.has(t.id+'-sample')) || custom.some(r=>r.tariff_id===t.id)),...rows.results.map(row=>JSON.parse(row.data))];
 }
 async function candidates(selection,db,tenant,plugin){
   insist(isObject(selection),'请选择业务和套餐。');
@@ -60,9 +61,14 @@ async function candidates(selection,db,tenant,plugin){
   const chosen=plans.find(t=>t.id===selection.tariff_id);
   const matching=chosen?.template_id ? rows.map(t=>t.id===chosen.template_id?{...t,tariff_id:chosen.id}:t) : rows;
   const res=match(selection,matching,plans);
+  if(chosen?.reviewed_id && res.basis) res.basis=[chosen.name,...(chosen.cycle==='—'?[]:[chosen.cycle+'付']),...(chosen.amount==='—'?[]:[chosen.amount+' 元/线'])];
   for(const c of res.candidates){
-    c.extra_fields=[...new Set(Object.values(rows.find(t=>t.id===c.id).mapping).filter(k=>k.startsWith('extra_')))];
+    c.extra_fields=[...new Set(Object.values(matching.find(t=>t.id===c.id && t.active && t.tariff_id===chosen?.id).mapping).filter(k=>k.startsWith('extra_')))];
     const profile=plans.find(t=>t.id===selection.tariff_id)?.carrier_profile;
+    if(chosen?.reviewed_id && c.id===chosen.template_id){
+      c.reviewed_controls=plugin.reviewedControls(chosen.reviewed_id);
+      c.extra_fields=[...c.reviewed_controls.inputs.map(x=>x[0]),...c.reviewed_controls.groups.map(x=>x.key),...(c.reviewed_controls.blank?[]:['manual_billing_ack'])];
+    }
     if(profile && c.id.startsWith('carrier-')){
       c.carrier_controls=plugin.controls(profile);
       c.extra_fields=[...c.carrier_controls.inputs.map(x=>x[0]),...c.carrier_controls.groups.map(x=>x.key)];
@@ -86,7 +92,8 @@ async function startSession(req,db,tenant,plugin) {
     db.prepare('INSERT INTO qa_sessions(hash,tenant,actor,expires) VALUES(?,?,?,?)').bind(await signature(token),tenant,account,now+8*60*60*1000)
   ];
   const hidden=plugin && !plugin.sharedCatalog && await db.prepare('SELECT hide_samples FROM demo_settings WHERE tenant=?').bind(tenant).first();
-  for(const t of hidden?[]:tariffs){
+  const deleted=plugin && !plugin.sharedCatalog ? new Set((await db.prepare('SELECT id FROM demo_deleted_samples WHERE tenant=?').bind(tenant).all()).results.map(r=>r.id)) : new Set();
+  for(const t of hidden?[]:tariffs.filter(t=>!deleted.has(t.id+'-sample'))){
     statements.push(db.prepare('INSERT OR IGNORE INTO qa_templates(tenant,id,tariff_id,name,revision,active,mapping) VALUES(?,?,?,?,?,1,?)')
       .bind(tenant,t.id+'-sample',t.id,t.name+' 新装样表','demo-1',JSON.stringify(sampleMapping(t))));
   }
@@ -123,17 +130,25 @@ async function generate(data,db,bucket,tenant,actor,plugin) {
   const t=matched.find(row=>row.id===template_id);
   insist(matches.match_token===data.match_token && t,'候选模板已变化，请重新匹配并确认。',409);
   const mapping=t.mapping;
+  const discount=selectedDiscount(selection,tariff);
   const bytes=await bytesFor(bucket,t.object_key,t.tariff_id);
-  let file;
-  if(tariff.carrier_profile && template_id.startsWith('carrier-')){
+  let file, review;
+  if(tariff.reviewed_id && template_id===tariff.template_id){
+    try {
+      const output=await plugin.generateReviewed(tariff,bytes,customer);
+      file=output.file;
+      review=[...(output.manualActions||[]),...(output.unmappedFields||[])];
+    } catch(error) { throw new FormError(error.message); }
+  } else if(tariff.carrier_profile && template_id.startsWith('carrier-')){
     validateCustomer(customer,{},tariff);
     try { file=plugin.renderCarrier(bytes,customer,tariff); }
     catch(error) { throw new FormError(error.message); }
   } else file=renderWord(bytes,mapping,validateCustomer(customer,mapping,tariff));
+  if(discount?.manual)review=[...(review||[]),'discount_factor'];
   const id=crypto.randomUUID(), key='records/'+tenant+'/'+id;
   const snapshot={id,created_by:accounts[actor].id,created_at:new Date().toISOString(),status:'generated',
     business_id:tariff.business_id,business_version_id:tariff.business_version_id,business_attribute:tariff.business_attribute,
-    tariff,template:{id:t.id,name:t.name,revision:t.revision}};
+    tariff,template:{id:t.id,name:t.name,revision:t.revision},...(discount?{discount}:{}),...(review?{review}:{})};
   await bucket.put(key,file);
   // Compare the active set inside the same statement that inserts the record.
   const activeIds=matches.candidates.map(c=>c.id).sort();
@@ -151,11 +166,11 @@ async function generate(data,db,bucket,tenant,actor,plugin) {
 }
 
 async function carrierRates(db,tenant,info,templateId){
-  const {profile,name,rates}=info;
+  const {profile,name,rates,discountRate}=info;
   return Promise.all(rates.map(async rate=>{
-    const id='carrier-'+(await signature(JSON.stringify([profile,rate.bandwidth,rate.amount,rate.cycle]))).slice(0,24);
+    const id='carrier-'+(await signature(JSON.stringify([profile,rate.bandwidth,rate.amount,rate.cycle,...(discountRate?[discountRate]:[])]))).slice(0,24);
     const tariff={id,name,bandwidth:rate.bandwidth,amount:rate.amount,cycle:rate.cycle,business_id:version.business_id,
-      business_version_id:version.id,business_attribute:'new',voice_required:false,carrier_profile:profile,carrier_rate:rate.key,template_id:templateId};
+      business_version_id:version.id,business_attribute:'new',voice_required:false,carrier_profile:profile,carrier_rate:rate.key,template_id:templateId,...(discountRate?{discount_rate:discountRate}:{})};
     return db.prepare('INSERT OR REPLACE INTO demo_tariffs(tenant,id,data) VALUES(?,?,?)').bind(tenant,id,JSON.stringify(tariff));
   }));
 }
@@ -177,6 +192,32 @@ async function consolidateCarrier(db,bucket,tenant,plugin){
   }
 }
 
+async function importTemplate(data,db,bucket,tenant,plugin,save) {
+  insist(typeof data.file==='string' && data.file.length>0 && data.file.length<=Math.ceil(plugin.reviewedLimit/3)*4,'请选择 10 MB 以内的 DOCX。');
+  let bytes;
+  try {bytes=Uint8Array.from(atob(data.file),c=>c.charCodeAt(0));}
+  catch {throw new FormError('Word 文件编码无效。');}
+  const plan=await plugin.identifyReviewed(bytes);
+  if(!plan){
+    insist(bytes.length<=524288,'此文件与已核验的空白原表不一致；普通智能转换仅支持 512 KiB 以内的文件。');
+    return importCarrier(data,db,bucket,tenant,plugin,save);
+  }
+  const {id,name,revision,rates}=plugin.reviewedInfo(plan);
+  if(!save)return json({reviewed:true,name,revision,rates});
+  const existing=await db.prepare('SELECT id FROM qa_templates WHERE tenant=? AND id=?').bind(tenant,id).first();
+  if(existing)return json({id,duplicate:true});
+  const key='templates/'+tenant+'/'+id;
+  await bucket.put(key,bytes);
+  try {
+    await db.batch([
+      ...rates.map(rate=>db.prepare('INSERT INTO demo_tariffs(tenant,id,data) VALUES(?,?,?)').bind(tenant,rate.id,JSON.stringify(rate))),
+      db.prepare('INSERT INTO qa_templates(tenant,id,tariff_id,name,revision,active,mapping,object_key,imported_at) VALUES(?,?,?,?,?,0,?,?,?)')
+        .bind(tenant,id,id,name,revision,'{}',key,new Date().toISOString())
+    ]);
+  } catch(error){await bucket.delete(key);throw error;}
+  return json({id,duplicate:false},201);
+}
+
 async function importCarrier(data,db,bucket,tenant,plugin,save,privateImport) {
   insist(typeof data.file==='string' && data.file.length>0 && data.file.length<=699052,'请选择 512 KiB 以内的 DOCX。');
   let info, metadata;
@@ -191,7 +232,7 @@ async function importCarrier(data,db,bucket,tenant,plugin,save,privateImport) {
     if(!save && metadata)return json({metadata, convertible:false, conversionMessage:error.message});
     throw new FormError(error.message);
   }
-  const {profile,name,revision,rates,tags,file}=info;
+  const {profile,name,revision,rates,tags,file,discountRate}=info;
   if(!save){
     const {inputs,groups}=plugin.controls(profile);
     const field_labels={...labels,...Object.fromEntries(inputs.map(([key,label])=>[key,label])),
@@ -207,9 +248,9 @@ async function importCarrier(data,db,bucket,tenant,plugin,save,privateImport) {
       confirmed.some(row=>isObject(row) && row.key===rate.key && sameTerms(row,rate))),
       '请先核对并确认原表识别出的全部资费。');
   }
-  const id='carrier-'+profile;
+  const id='carrier-'+profile+(discountRate?'-rate-'+discountRate.replace('.','-'):'');
   async function existingImport() {
-    const saved=(await directory(db,tenant,plugin,true)).filter(t=>t.carrier_profile===profile && t.template_id);
+    const saved=(await directory(db,tenant,plugin,true)).filter(t=>t.carrier_profile===profile && t.template_id && (t.discount_rate||'')===(discountRate||''));
     if(!saved.length) return null;
     const templateId=saved[0].template_id;
     const sameRates=saved.length===rates.length && rates.every(rate=>saved.some(t=>
@@ -258,7 +299,7 @@ export async function handleForms(req,env) {
     }
     if(path==='/forms/mode' && method==='GET')return json({preview:true,hosted:true});
     if(path==='/health' && method==='GET')return json({status:'ok',mode:'hosted-acceptance'});
-    if(path==='/catalog' && method==='GET')return json({...catalog,versions:[...catalog.versions,version,voiceVersion]});
+    if(path==='/catalog' && method==='GET')return json({...catalog,versions:[...catalog.versions,version,voiceVersion,...(env.DEMO_IMPORT?.reviewedVersions||[])]});
     insist(env.DB && env.BUCKET,'验收存储尚未就绪。',503);
     const db=env.DB, bucket=env.BUCKET;
     const plugin=env.WORD_IMPORT ? {...env.WORD_IMPORT,sharedCatalog:true} : env.DEMO_IMPORT;
@@ -275,12 +316,32 @@ export async function handleForms(req,env) {
     const actor=entry.actor;
     if(env.DEMO_IMPORT)await consolidateCarrier(db,bucket,tenant,plugin);
     const smartAdmin=Boolean(plugin) && accounts[actor].role==='admin' && (!plugin.sharedCatalog || Boolean(listedForBusiness(req,env)));
-    if(path==='/forms/workspace' && method==='GET')return json({actor:accounts[actor],tariffs:await directory(db,tenant,plugin,smartAdmin),labels,smart_import:smartAdmin});
+    if(path==='/forms/workspace' && method==='GET'){
+      const plans=await directory(db,tenant,plugin,smartAdmin);
+      const enabled=plugin?new Set((await templates(db,tenant,false,catalogOwner(tenant,plugin))).filter(t=>t.active).map(t=>t.id)):null;
+      return json({actor:accounts[actor],tariffs:plans.map(t=>enabled&&t.template_id?{...t,template_active:enabled.has(t.template_id)}:t),
+        labels,smart_import:smartAdmin});
+    }
     if(path==='/forms/match' && method==='POST')return json((await candidates((await body(req)).selection,db,tenant,plugin)).result);
     if(path==='/forms/generate' && method==='POST')return await generate(await body(req),db,bucket,tenant,actor,plugin);
     if(path==='/forms/records' && method==='GET'){
       const rows=await db.prepare('SELECT snapshot FROM qa_records WHERE tenant=? AND actor=? ORDER BY rowid DESC').bind(tenant,actor).all();
       return list(rows.results.map(r=>JSON.parse(r.snapshot)));
+    }
+    if(path==='/forms/dashboard' && method==='GET'){
+      const identity=accounts[actor], range=dashboardPeriod(url.searchParams);
+      const query=identity.role==='admin' ?
+        db.prepare('SELECT snapshot FROM qa_records WHERE tenant=? ORDER BY rowid DESC').bind(tenant) :
+        db.prepare('SELECT snapshot FROM qa_records WHERE tenant=? AND actor=? ORDER BY rowid DESC').bind(tenant,actor);
+      const rows=await query.all();
+      return json(workDashboard(identity,Object.values(accounts),rows.results.map(r=>JSON.parse(r.snapshot)),range));
+    }
+    const boardRecord=/^\/forms\/dashboard\/records\/([\w-]+)\/file$/.exec(path);
+    if(boardRecord && method==='GET'){
+      const row=accounts[actor].role==='admin' ?
+        await db.prepare('SELECT object_key FROM qa_records WHERE tenant=? AND id=?').bind(tenant,boardRecord[1]).first() :
+        await db.prepare('SELECT object_key FROM qa_records WHERE tenant=? AND actor=? AND id=?').bind(tenant,actor,boardRecord[1]).first();
+      insist(row,'找不到生成记录。',404);return documentFile(await bytesFor(bucket,row.object_key));
     }
     const record=/^\/forms\/records\/([\w-]+)\/file$/.exec(path);
     if(record && method==='GET'){
@@ -300,7 +361,8 @@ export async function handleForms(req,env) {
         return json({removed:true});
       }
       if(plugin && method==='POST' && ['/forms/templates/inspect','/forms/templates/import'].includes(path))
-        return await importCarrier(await body(req),db,bucket,catalogOwner(tenant,plugin),plugin,path.endsWith('/import'),Boolean(env.WORD_IMPORT));
+        if(env.DEMO_IMPORT) return await importTemplate(await body(req,Math.ceil(plugin.reviewedLimit/3)*4+8192),db,bucket,tenant,plugin,path.endsWith('/import'));
+        else return await importCarrier(await body(req),db,bucket,catalogOwner(tenant,plugin),plugin,path.endsWith('/import'),Boolean(env.WORD_IMPORT));
       if(path==='/forms/templates' && method==='GET'){
         const rows=await templates(db,tenant,Boolean(plugin),smartAdmin ? catalogOwner(tenant,plugin) : tenant);
         return list(rows.map(({tenant,object_key,...item})=>item));
@@ -312,6 +374,13 @@ export async function handleForms(req,env) {
         const id=item[1];
         const t=await db.prepare('SELECT object_key,tariff_id FROM qa_templates WHERE tenant=? AND id=?').bind(owner,id).first();
         insist(t,'找不到模板。',404);
+        if(t.object_key===null && env.DEMO_IMPORT){
+          await db.batch([
+            db.prepare('INSERT OR IGNORE INTO demo_deleted_samples(tenant,id) VALUES(?,?)').bind(tenant,id),
+            db.prepare('DELETE FROM qa_templates WHERE tenant=? AND id=? AND object_key IS NULL').bind(tenant,id)
+          ]);
+          return json({id});
+        }
         insist(t.object_key,'内置样表不能删除。',403);
         const [,deleted]=await db.batch([
           db.prepare("DELETE FROM demo_tariffs WHERE tenant=? AND json_extract(data,'$.template_id')=? AND EXISTS (SELECT 1 FROM qa_templates WHERE tenant=? AND id=? AND object_key=?)")

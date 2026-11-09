@@ -4,9 +4,9 @@ import { bindClassification, downloadControl, request, selectors, status, refres
 export function templatesView({ rows, workspace, hosted }) {
   const mapping = Object.fromEntries(Object.keys(workspace.labels).map(key => [key, key]));
   const smart = workspace.smart_import ? '<section class="smart-import" aria-labelledby="smart-title"><h3 id="smart-title">智能导入 Word</h3>' +
-    '<p>可导入 100M 智云上海专线基础版（FTTR-B）不带语音的原始填表示例或占位符模板。请使用虚构资料。</p>' +
-    '<div id="smart-drop"><label for="smart-file">把 .docx 文件拖到虚线框内</label><input id="smart-file" type="file" accept=".docx"></div>' +
-    '<p class="hint">拖拽没有反应时，可点击「选择文件」，两种方式使用相同的解析流程。</p>' +
+    '<p>支持已核验的 100M、200M、智云护航 AI 原表及外地公司担保书，也可转换支持的 FTTR-B 模板。请上传空白 Word。</p>' +
+    '<div id="smart-drop"><label for="smart-file">把 .docx 文件拖到虚线框内</label><input id="smart-file" type="file" accept=".docx" multiple></div>' +
+    '<p class="hint">可拖拽或选择文件。批量导入仅接收已核验的空白原表；其他版式请逐份解析。</p>' +
     '<p id="smart-status" role="status"></p><div id="smart-preview" aria-live="polite"></div></section><div class="divider"></div><h3>手动上传模板</h3>' : '';
   return smart + '<form id="template-form">' + selectors() + '<div class="field-grid"><label>模板名称<input name="name" required maxlength="80"></label>' +
     '<label>版本号<input name="revision" required maxlength="80"></label><label>Word 模板（.docx）<input name="file" type="file" accept=".docx" required></label></div>' +
@@ -26,10 +26,10 @@ export function templatesView({ rows, workspace, hosted }) {
       '<td data-template-state aria-live="polite">' + (t.active ? '已启用' : '已停用') + '</td><td>' +
       '<button type="button" data-active="' + String(!t.active) + '" data-id="' + esc(t.id) + '">' + (t.active ? '停用' : '启用') +
       '</button> ' + downloadControl('/templates/' + t.id + '/file', '下载模板', hosted) +
-      (t.custom ? ' <button type="button" data-delete-open>删除</button><div class="template-delete-confirm" hidden>' +
+      (workspace.smart_import ? ' <button type="button" data-delete-open>删除</button><div class="template-delete-confirm" hidden>' +
       '<p>删除「'+esc(t.name)+'」版本 '+esc(t.revision)+'？已生成的 Word 仍可从历史记录下载。</p>' +
       '<button type="button" data-delete-cancel>取消</button> <button type="button" data-delete-confirm="'+esc(t.id)+'">确认删除</button></div>' : '') +
-      '<details><summary>查看映射</summary><pre>' + esc(JSON.stringify(t.mapping, null, 2)) + '</pre></details><div data-template-error aria-live="polite"></div></td></tr>'; }).join('') + '</tbody></table></div>';
+      '<details><summary>'+(tariff?.reviewed_id?'查看填写规则':'查看映射')+'</summary><pre>' + esc(tariff?.reviewed_id?'按已核验的 Word 版式填写；原表不需要自行设置占位符。':JSON.stringify(t.mapping, null, 2)) + '</pre></details><div data-template-error aria-live="polite"></div></td></tr>'; }).join('') + '</tbody></table></div>';
 }
 function readFile(file) {
   return new Promise((resolve, reject) => {
@@ -41,7 +41,7 @@ function readFile(file) {
 }
 export function bindTemplates(root, state) {
   const form = root.querySelector('#template-form');
-  const selection = bindClassification(form, { ...state, workspace: { ...state.workspace, tariffs: state.workspace.tariffs.filter(t=>!t.carrier_profile) } });
+  const selection = bindClassification(form, { ...state, workspace: { ...state.workspace, tariffs: state.workspace.tariffs.filter(t=>!t.carrier_profile && !t.reviewed_id) } });
   if(state.workspace.smart_import) bindSmartImport(root, state.workspace.labels);
   const clearSamples=root.querySelector('#remove-samples');
   if(clearSamples){
@@ -148,11 +148,61 @@ function bindSmartImport(root, labels) {
       finally{button.disabled=false;}
     };
   }
+  const validDoc=file=>file && /\.docx$/i.test(file.name) && file.size>0 && file.size<=10000000;
+  async function inspectBatch(files,ticket) {
+    if(files.length>25){tell('每批最多选择 25 份 Word。');return;}
+    tell('正在核验 '+files.length+' 份空白原表…');
+    const verified=[], skipped=[];
+    for(const source of files){
+      if(ticket!==epoch||!root.isConnected)return;
+      if(!validDoc(source)){skipped.push(source.name);continue;}
+      try {
+        const file=await readFile(source), filename=source.name;
+        const result=await request('/templates/inspect',{method:'POST',data:{file,filename}});
+        if(result.reviewed)verified.push({file,filename,name:result.name});
+        else skipped.push(filename);
+      } catch {skipped.push(source.name);}
+    }
+    if(ticket!==epoch||!root.isConnected)return;
+    tell('已核验 '+verified.length+' 份；跳过 '+skipped.length+' 份。');
+    preview.innerHTML=(verified.length?'<ul>'+verified.map(item=>'<li>'+esc(item.name)+'</li>').join('')+
+      '</ul><form id="smart-batch-confirm"><label class="batch-enable"><input type="checkbox" name="enable">导入后启用新模板</label>'+
+      '<button class="button">批量导入已核验模板</button></form>':'')+
+      (skipped.length?'<p>未通过批量核验，请逐份检查：'+esc(skipped.join('、'))+'</p>':'');
+    const form=preview.querySelector('#smart-batch-confirm');
+    if(!form)return;
+    form.onsubmit=async event=>{
+      event.preventDefault();
+      const button=form.querySelector('button'), enable=form.elements.enable.checked;
+      picker.disabled=button.disabled=form.elements.enable.disabled=true;
+      let added=0, duplicates=0, enabled=0;
+      const failures=[];
+      for(const [index,item] of verified.entries()){
+        tell('正在处理 '+(index+1)+' / '+verified.length+'…');
+        try {
+          const saved=await request('/templates/import',{method:'POST',data:{file:item.file,filename:item.filename}});
+          if(saved.duplicate){duplicates++;continue;}
+          added++;
+          if(enable){
+            await request('/templates/'+saved.id,{method:'PATCH',data:{active:true}});
+            enabled++;
+          }
+        } catch(error){failures.push(item.name+'：'+error.message);}
+      }
+      if(root.isConnected){
+        const message='批量导入完成：新增 '+added+' 份，启用 '+enabled+' 份，已存在 '+duplicates+' 份。'+
+          (failures.length?' 未完成：'+failures.join('；'):'');
+        sessionStorage.setItem('runwell-smart-import-notice',message);
+        refresh();
+      }
+    };
+  }
   async function inspect(files) {
     const ticket=++epoch;
     preview.replaceChildren();
-    if(files.length!==1 || !/\.docx$/i.test(files[0].name) || !files[0].size || files[0].size>524288){
-      tell('请一次选择一份 512 KiB 以内的 DOCX。'); return;
+    if(files.length>1){await inspectBatch(files,ticket);return;}
+    if(files.length!==1 || !validDoc(files[0])){
+      tell('请一次选择一份 10 MB 以内的 DOCX。'); return;
     }
     const filename=files[0].name.normalize('NFKC').replace(/\s+/g,'');
     tell('已收到「'+files[0].name+'」，正在解析 Word…');
@@ -160,6 +210,15 @@ function bindSmartImport(root, labels) {
       const file=await readFile(files[0]);
       const result=await request('/templates/inspect',{method:'POST',data:{file,filename}});
       if(ticket!==epoch || !root.isConnected)return;
+      if(result.reviewed){
+        tell('已核验空白原表。导入并启用后，员工可直接在表单生成页使用。');
+        const rates=result.rates.filter(r=>r.cycle!=='—');
+        preview.innerHTML='<p><strong>'+esc(result.name)+'</strong> · '+esc(result.revision)+'</p>'+
+          (rates.length?'<ul>'+rates.map(r=>'<li>'+esc(r.cycle+'付'+(r.amount==='—'?'':' · '+r.amount+' 元/线'))+'</li>').join('')+'</ul>':'')+
+          '<form><button class="button">导入模板</button></form>';
+        bindConfirm(preview.querySelector('form'),file,filename);
+        return;
+      }
       const fields=[['bandwidth','网速'],['name','套餐名'],['revision','版本'],['voice','语音'],['discount','折扣']];
       const summary='<dl>'+fields.map(([key,label])=>'<dt>'+label+'</dt><dd>'+esc(result.metadata[key]||'待确认')+'</dd>').join('')+'</dl>';
       if(!result.convertible){
@@ -188,6 +247,10 @@ function bindSmartImport(root, labels) {
       const confirm=preview.querySelector('form');
       appendAi(result.metadata,ticket);
       if(confirm.elements.variant)confirm.elements.variant.value=suggested;
+      bindConfirm(confirm,file,filename);
+    } catch(error){if(ticket===epoch && root.isConnected)tell(error.message);}
+  }
+  function bindConfirm(confirm,file,filename){
       confirm.onsubmit=async event=>{
         event.preventDefault();
         if (picker.disabled || ticket !== epoch) return;
@@ -199,14 +262,13 @@ function bindSmartImport(root, labels) {
             confirmed_rates:result.rates
           }});
           if(root.isConnected){
-            const notice=saved.duplicate?'该模板与资费已在目录中。':'已保存模板和 '+result.rates.length+' 档资费。请在下方下载核对并启用模板。';
+            const notice=saved.duplicate?'该版式模板已导入，未重复新增。':'已录入一份模板。请在模板目录启用，员工即可在表单生成页选择并匹配。';
             sessionStorage.setItem('runwell-smart-import-notice',notice);
             refresh();
           }
         } catch(error){tell(error.message);}
         finally{button.disabled=false;picker.disabled=false;}
       };
-    } catch(error){if(ticket===epoch && root.isConnected)tell(error.message);}
   }
   const notice=sessionStorage.getItem('runwell-smart-import-notice');
   if(notice){sessionStorage.removeItem('runwell-smart-import-notice');tell(notice);}

@@ -1,4 +1,5 @@
 import { unzipSync, zipSync, strToU8 } from 'fflate';
+import { dateParts } from './supplement.mjs';
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const R = 'http://schemas.openxmlformats.org/package/2006/relationships';
@@ -169,7 +170,7 @@ const groups = [
 const inputs = [['extra_credit_code','统一社会信用代码',true],['extra_industry','企业所属行业',true],['install_zip','安装邮编',true],['billing_zip','账单邮编',true],
   ['job_title','经办人职务'],['fax','传真'],['existing_line','在用宽带号码（选择在用宽带时必填）'],['paid_count','收费从设备数量（订购时必填）'],
   ['security_name','信息安全责任人姓名',true],['security_role','信息安全责任人职务',true],['security_phone','信息安全责任人联系电话',true],
-  ['service_use','业务用途',true],['delegate_company','代办单位'],['delegate_credit_code','代办单位信用代码'],['delegate_name','代办员工'],['delegate_id','代办员工身份证号']];
+  ['service_use','业务用途',true],['application_date','申请日期',false,'date'],['delegate_company','代办单位'],['delegate_credit_code','代办单位信用代码'],['delegate_name','代办员工'],['delegate_id','代办员工身份证号']];
 const supportedKeys = new Set([
   ...primary.map(([,key])=>key), ...inputs.map(([key])=>key),
   'billing_address','bank_account','bank_name','service_type','application_type',
@@ -326,6 +327,10 @@ export function analyzeCarrier(bytes,variant,xmlRuntime=browserXml) {
   requireThat(rates.every(rate=>rate.bandwidth==='100M/100M'),'目前仅支持三档网速均为 100M/100M 的原表。');
   const examples = new Map();
   for (const [i,key] of primary) {
+    if (['id_number','email'].includes(key) && !compact(p[i-1]).startsWith('*')) {
+      const first=wt(p[i-1])[0];
+      first.textContent='*'+first.textContent;
+    }
     const n = text(p[i]);
     if (!n.trim() && october) append(p[i],token(key));
     else {
@@ -394,8 +399,12 @@ export function analyzeCarrier(bytes,variant,xmlRuntime=browserXml) {
     'Word 图片说明或其它元数据中仍含样例资料，请清理后导入。');
   const discountNote=[39,40].some(i=>/(?:\d+(?:\.\d+)?折|折扣|折后)/.test(compact(p[i])));
   const discounted=variant==='discount';
+  const factors=[...new Set([39,40].flatMap(i=>[...compact(p[i]).matchAll(/(?:^|[^\d.])([1-9](?:\.\d{1,2})?)折/g)]
+    .map(match=>String(Number(match[1])))))];
+  const discountRate=discounted&&factors.length===1?factors[0]:null;
+  requireThat(variant!=='standard'||!discountNote,'原表基础套餐有折扣备注，请核对模板类型。');
   const baseProfile=october?octoberProfile:profile;
-  return {profile:discounted?baseProfile+'-discount':baseProfile,variantRequired:october||discountNote,discountNote,
+  return {profile:discounted?baseProfile+'-discount':baseProfile,variantRequired:october||discountNote,discountNote,discountRate,
     name:october?name+(discounted?'（打折、不带语音 · 10 月 21 日版）':'（不打折、不带语音 · 10 月 21 日版）'):name+(discounted?'（打折、不带语音）':''),
     revision:october?'2026-10-21':'2026/A',rates,tags:[...tags],file:zipSync(files,{level:6})};
 }
@@ -419,18 +428,28 @@ export function renderCarrier(bytes, customer, rate, xmlRuntime=browserXml) {
   const rateIndex = Number(rate.carrier_rate);
   requireThat([0,1,2].includes(rateIndex),'套餐资费无法确认。');
   select(rateIndex===2?40:39,rateIndex===2?0:rateIndex);
+  for (const [i,key] of primary) {
+    if (['id_number','email'].includes(key) && !compact(p[i-1]).startsWith('*')) {
+      const first=wt(p[i-1])[0];
+      first.textContent='*'+first.textContent;
+    }
+  }
+  // Replace list-based boxes on both sides, including the unselected option.
+  for (const i of [29,30,34,35]) {
+    const nums=all(p[i],W,'numPr');
+    if (!nums.length) continue; // Older layouts already have a literal box.
+    requireThat(nums.length===1 && !/[□■☐☑]/.test(text(p[i])), '原表方框位置已变化。');
+    nums[0].parentNode.removeChild(nums[0]);
+    const r=doc.createElementNS(W,'w:r'), t=doc.createElementNS(W,'w:t');
+    t.setAttributeNS(xmlSpace,'xml:space','preserve'); t.textContent=marks.has(i)?'■ ':'□ '; r.appendChild(t);
+    p[i].insertBefore(r,all(p[i],W,'pPr')[0]?.nextSibling || p[i].firstChild);
+    marks.delete(i);
+  }
   for (const [i,positions] of marks) {
-    if (i === 30 || i === 34 || october && (i === 29 || i === 35)) {
-      const num = all(p[i],W,'numPr')[0]; requireThat(num,'空框编号已变化。'); num.parentNode.removeChild(num);
-      const r=doc.createElementNS(W,'w:r'), t=doc.createElementNS(W,'w:t');
-      t.setAttributeNS(xmlSpace,'xml:space','preserve'); t.textContent='■ '; r.appendChild(t);
-      p[i].insertBefore(r,all(p[i],W,'pPr')[0]?.nextSibling || p[i].firstChild);
-    } else {
       const squares = [...text(p[i]).matchAll(/□/g)];
       for (const j of [...positions].sort((a,b)=>b-a)) {
         requireThat(squares[j],'空框位置已变化。'); replace(p[i],squares[j].index,squares[j].index+1,'■');
       }
-    }
   }
   const values = {};
   for (const [key,label,required] of inputs) {
@@ -448,6 +467,12 @@ export function renderCarrier(bytes, customer, rate, xmlRuntime=browserXml) {
   requireThat(value('choice_billing')!=='1' || values.billing_address,'请填写其它账单地址。');
   values.bank_account=collection?value('bank_account'):'';
   values.bank_name=collection?value('bank_name'):'';
+  if(values.application_date){
+    const [year,month,day]=dateParts(values.application_date,'申请日期');
+    const dateParagraph=p[october?112:109];
+    requireThat(['sign_y','sign_m','sign_d'].every(key=>text(dateParagraph).split(token(key)).length===2),'申请日期位置无法确认，请重新导入兼容模板。');
+    Object.assign(values,{sign_y:year,sign_m:month,sign_d:day});
+  }
   values.service_type='宽带'; values.application_type='新装';
   editStories(files, doc, xmlRuntime, paragraph => substituteTokens(paragraph, key => {
     const v=values[key] ?? (/(?:sign|principal|delegate)_[ymd]$/.test(key)?'    ':null);

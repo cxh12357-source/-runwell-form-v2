@@ -35,12 +35,12 @@ export const businessText = {
 13、使用人（实名制）：
 14、使用人（实名制）身份证号码：`,
     materials: `【商务专线·新装】手续材料提示（带语音）：
-1、申请文档打印1份，每页加盖公章，指定位置经办人签字、日期并加盖公章，最后一页委托单位处加盖公章。
-2、营业执照复印件1份（原件复印，有效期内），加盖公章。
-3、经办人身份证正反面复印件1份（原件复印，复印件大小与原件大小保持一致），加盖公章。
-4、法定代表人身份证正反面复印件1份（原件复印，复印件大小与原件大小保持一致），加盖公章。
-5、使用人（实名制）身份证正反面复印件1份（原件复印，复印件大小与原件大小保持一致），加盖公章。
-6、含语音业务工作人员上门受理，现场需准备好：盖章材料、经办人本人、经办人身份证原件、使用人的身份证原件。
+1、申请文档打印1份，每页加盖公章，指定位置经办人签字、日期并加盖公章，最后一页委托单位处加盖公章；
+2、营业执照复印件1份（原件复印，有效期内），加盖公章；
+3、经办人身份证正反面复印件1份（原件复印，复印件大小与原件大小保持一致），加盖公章；
+4、法定代表人身份证正反面复印件1份（原件复印，复印件大小与原件大小保持一致），加盖公章；
+5、使用人（实名制）身份证正反面复印件1份（原件复印，复印件大小与原件大小保持一致），加盖公章；
+6、含语音业务工作人员上门受理，现场需准备好：盖章材料，经办人本人在，经办人身份证原件在，使用人的身份证原件在；
 7、AI稽查，加盖的公章务必清晰，红章不可有黑章。`,
   },
 };
@@ -68,14 +68,17 @@ export const companyTitles = {
 const aliases = Object.entries(fields).flatMap(([key,names]) => names.map(name => [name.normalize('NFKC').toLowerCase(),key]));
 const keyByAlias = new Map(aliases);
 const escaped = [...keyByAlias.keys()].sort((a,b) => b.length-a.length).map(alias =>
-  alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/^经办人(?=.)/, '经办人[ \\t]*'));
+  [...alias].map(ch=>ch==='-'?'[-‐‑–—]':ch.replace(/[.*+?^$(){}|[\]\\]/g,'\\$&')).join('[ \\t]*'));
 const marker = new RegExp('(?:^|[\\n,;。]|[ \\t]+)[ \\t]*(?:\\d{1,2}[、.．)）][ \\t]*)?('+escaped.join('|')+')[ \\t]*(?:[:=]|是|为|[ \\t]+)[ \\t]*','giu');
 const missingValue = /^(?:[-—/]|无|待定|暂无|未提供|不详|待补充|现金\s*[/／]\s*托收)$/;
 function normalize(key, value) {
   let text = value.trim().replace(/[。;；,，、]+$/u,'').trim();
   if (!text || missingValue.test(text)) return '';
   if (key==='payment_method') return ({现金:'cash',托收:'collection',cash:'cash',collection:'collection'})[text] || text;
-  if (key==='phone' && /^1\d{2}(?:[ \t‐‑–—−-]?\d{4}){2}$/.test(text)) return text.replace(/\D/g,'');
+  if (key==='phone') {
+    const digits=text.replace(/[ \t‐‑–—−-]/gu,'');
+    if (/^1\d{10}$/.test(digits)) return digits;
+  }
   if (key==='bank_account') text=text.replace(/[ -]/g,'');
   if (['id_number','extra_legal_id','extra_user_id'].includes(key)) text=text.toUpperCase();
   return text;
@@ -89,7 +92,7 @@ export function parseReply(raw) {
   }
   const matches=[...text.matchAll(marker)];
   for (const [i,m] of matches.entries()) {
-    const key=keyByAlias.get(m[1].replace(/[ \t]/g,'').toLowerCase());
+    const key=keyByAlias.get(m[1].toLowerCase().replace(/[ \t]/g,'').replace(/[‐‑–—]/g,'-'));
     const segment=text.slice(m.index+m[0].length, matches[i+1]?.index ?? text.length);
     const value=segment.split(/[\n,;。]/)[0].trim();
     add(key,value);
@@ -121,6 +124,10 @@ export function validValue(key, value) {
   if (key==='phone') return /^1\d{10}$/.test(value);
   if (['id_number','extra_legal_id','extra_user_id'].includes(key)) return /^\d{17}[\dX]$/i.test(value);
   if (key==='email') return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  if (key==='phone') {
+    const digits=text.replace(/[ \t‐‑–—−-]/gu,'');
+    if (/^1\d{10}$/.test(digits)) return digits;
+  }
   if (key==='bank_account') return /^\d{6,32}$/.test(value);
   if (key==='payment_method') return ['cash','collection'].includes(value);
   return true;

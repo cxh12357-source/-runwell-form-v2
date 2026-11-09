@@ -76,6 +76,7 @@ async function assemble(stage) {
   await copyFile(join(repo, 'backend/modules/catalog/data.mjs'), inTarget('forms/data.mjs'));
   for (const name of ['service.mjs', 'word.mjs']) await copyFile(join(online, name), inTarget('forms', name));
   await put('forms/carrier.mjs', packedCarrier);
+  await copyFile(join(repo, 'demo/supplement.mjs'), inTarget('forms/supplement.mjs'));
   await put('forms/word-dom.mjs', packedDom);
   if (!update) {
     const sample = {};

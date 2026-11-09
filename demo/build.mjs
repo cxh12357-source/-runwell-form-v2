@@ -55,11 +55,13 @@ const demoPlugin = {
         contents = 'import { localFetch } from "runwell:local";\n' + replace(contents, 'await fetch(', 'await localFetch(');
       } else if (path.endsWith('preview.js')) {
         contents = replace(contents, 'let body = login(hosted);', "let body = '';");
+        contents = 'import { currentDemoAccount, switchDemoAccount } from "runwell:local";\n' + contents;
         contents = replace(contents, 'if (hasToken()) {', '{');
-        contents = replace(contents, '<p class="hint">当前身份　\' + esc(state.workspace.actor.id) +\n    \'　<button id="forms-exit" type="button">切换账号</button></p>', '<p class="hint">免登录演示</p>');
+        contents = replace(contents, '<p class="hint">当前身份　\' + esc(state.workspace.actor.id) +\n    \'　<button id="forms-exit" type="button">切换账号</button></p>', '<label class="demo-account">免登录演示 · 模拟身份<select id="demo-account"><option value="admin">模板管理员</option><option value="a">员工 A</option><option value="b">员工 B</option></select></label>');
         contents = replace(contents, '当前账号还没有生成记录。', '当前浏览器还没有生成记录。');
         contents = replace(contents, '仅使用虚构客户资料和测试套餐。', '仅使用虚构资料。模板和生成记录保存在当前浏览器。');
-        contents = replace(contents, "  root.querySelector('#forms-exit').onclick = () => { setToken(''); refresh(); };", '');
+        contents = replace(contents, "  root.querySelector('#forms-exit').onclick = () => { setToken(''); refresh(true); };",
+          "  const account = root.querySelector('#demo-account');\n  account.value = currentDemoAccount();\n  account.onchange = () => { switchDemoAccount(account.value); refresh(true); };");
         contents = replace(contents, "      if (error.status !== 401) throw error;\n      setToken('');", '      throw error;');
       } else if (path.endsWith('generate.js')) {
         contents = replace(contents, '生成成功，文件已保存到此账号的历史记录。', '生成成功，文件已保存到当前浏览器的历史记录。');

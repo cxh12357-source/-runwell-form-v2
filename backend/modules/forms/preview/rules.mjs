@@ -45,6 +45,16 @@ function clean(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 const dimensions = ['business_id', 'business_version_id', 'business_attribute', 'voice_required', 'cycle', 'bandwidth', 'amount'];
+export function selectedDiscount(selection,tariff) {
+  if(selection.discount_mode===undefined && selection.discount_factor===undefined)return null;
+  const mode=(tariff.reviewed_id?.includes('-discount-')||tariff.carrier_profile?.endsWith('-discount'))?'yes':'no';
+  if(selection.discount_mode!==mode || (mode==='no' && selection.discount_factor!==undefined))return false;
+  if(mode==='no')return {mode};
+  const factor=selection.discount_factor;
+  if(typeof factor!=='string' || !/^(?:[1-9](?:\.\d{1,2})?|0\.\d{1,2})$/.test(factor) || Number(factor)<=0 ||
+    (tariff.discount_rate && Number(tariff.discount_rate)!==Number(factor)))return false;
+  return {mode,factor,manual:!tariff.discount_rate};
+}
 export function match(selection, templates, directory = tariffs) {
   const missing = ['tariff_id', ...dimensions].filter(key => selection[key] == null || selection[key] === '');
   const result = { status: 'not_found', candidates: [], missing_fields: missing, conflicts: [] };
@@ -52,6 +62,7 @@ export function match(selection, templates, directory = tariffs) {
   const tariff = directory.find(t => t.id === selection.tariff_id);
   if (!tariff) return result;
   result.conflicts = dimensions.filter(key => selection[key] !== tariff[key]);
+  if(selectedDiscount(selection,tariff)===false)result.conflicts.push('discount_factor');
   if (result.conflicts.length) return { ...result, status: 'conflict' };
   result.candidates = templates.filter(t => t.active && t.tariff_id === tariff.id).map(t =>
     ({ id: t.id, name: t.name, revision: t.revision }));
@@ -98,4 +109,50 @@ export function validateCustomer(customer, mapping, tariff) {
       '资料含有不支持的字符，或超过 500 字。');
   }
   return Object.fromEntries(Object.entries(mapping).map(([tag, key]) => [tag, values[key]]));
+}
+
+const dashboardDay=86400000, shanghaiOffset=8*3600000;
+const dayLabel=milliseconds=>new Date(milliseconds).toISOString().slice(0,10);
+function parseDashboardDay(value) {
+  insist(typeof value==='string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && value>='1900-01-01','请选择有效的起止日期。',400);
+  const day=Date.parse(value+'T00:00:00Z');
+  insist(Number.isFinite(day) && dayLabel(day)===value,'请选择有效的起止日期。',400);
+  return day;
+}
+export function dashboardPeriod(query=new URLSearchParams(), now=Date.now()) {
+  const period=query.get('period') ?? 'week', rawOffset=query.get('offset') ?? '0';
+  insist(['week','month','all','custom'].includes(period),'请选择有效的统计周期。',400);
+  insist(/^(0|[1-9]\d{0,2})$/.test(rawOffset) && Number(rawOffset)<=520,'请选择有效的往期范围。',400);
+  const offset=Number(rawOffset);
+  if(period==='all')return {period,offset:0,from:null,to:null};
+  let start,end;
+  if(period==='custom'){
+    start=parseDashboardDay(query.get('from')); end=parseDashboardDay(query.get('to'));
+    insist(start<=end,'开始日期不能晚于结束日期。',400);
+  } else {
+    const today=new Date(now+shanghaiOffset);
+    const y=today.getUTCFullYear(), m=today.getUTCMonth(), d=today.getUTCDate();
+    if(period==='week'){
+      const monday=(today.getUTCDay()+6)%7;
+      start=Date.UTC(y,m,d-monday-offset*7); end=start+6*dashboardDay;
+    } else {
+      start=Date.UTC(y,m-offset,1); end=Date.UTC(y,m-offset+1,1)-dashboardDay;
+    }
+  }
+  return {period,offset,from:dayLabel(start),to:dayLabel(end)};
+}
+
+export function workDashboard(actor, roster, records, range=dashboardPeriod()) {
+  if(range.from){
+    const start=Date.parse(range.from+'T00:00:00+08:00');
+    const end=Date.parse(range.to+'T00:00:00+08:00')+dashboardDay;
+    records=records.filter(record=>{
+      const time=Date.parse(record.created_at);
+      return time>=start && time<end;
+    });
+  }
+  const admin=actor.role==='admin';
+  const counts=new Map((admin?roster:[actor]).map(person=>[person.id,0]));
+  for(const record of records) counts.set(record.created_by,(counts.get(record.created_by)||0)+1);
+  return {scope:admin?'team':'self', range, employees:[...counts].map(([id,forms_count])=>({id,forms_count,quote_count:null})), records};
 }

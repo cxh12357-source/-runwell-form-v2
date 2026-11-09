@@ -1,4 +1,4 @@
-import { FormError, insist, labels, tariffs } from './rules.mjs';
+import { FormError, insist, labels, tariffs, dashboardPeriod, workDashboard } from './rules.mjs';
 import { isObject } from './store.mjs';
 
 async function input(req) {
@@ -33,6 +33,12 @@ export function previewRoutes(store, identities) {
     if (path === '/match' && method === 'POST') return send(store.match((await input(req)).selection));
     if (path === '/generate' && method === 'POST') return send(await store.generate(actor.id, await input(req)));
     if (path === '/records' && method === 'GET') return list(store.history(actor.id));
+    if (path === '/dashboard' && method === 'GET') {
+      const range=dashboardPeriod(new URL(req.url,'http://localhost').searchParams);
+      return send(workDashboard(actor,[...identities.values()],actor.role==='admin'?store.teamHistory():store.history(actor.id),range));
+    }
+    const boardDownload = /^\/dashboard\/records\/([\w-]+)\/file$/.exec(path);
+    if (boardDownload && method === 'GET') return file(store.recordFile(boardDownload[1],actor.id,actor.role==='admin'));
     const download = /^\/records\/([\w-]+)\/file$/.exec(path);
     if (download && method === 'GET') return file(store.recordFile(download[1], actor.id));
     if (path === '/templates' || path.startsWith('/templates/')) {

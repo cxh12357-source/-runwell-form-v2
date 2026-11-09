@@ -17,7 +17,7 @@
 
 客户字段：company_name、install_address、billing_address、contact_name、phone、id_number、email、payment_method（cash/collection）、bank_account、bank_name。
 
-匹配字段：business_id、business_version_id、business_attribute、voice_required、package_request（原始套餐描述）、tariff_id。金额采用精确表示；手机号、身份证、银行账号保留字符串。正式字段需双方确认。
+匹配字段：business_id、business_version_id、business_attribute、voice_required、package_request（原始套餐描述）、tariff_id。金额采用精确表示；手机号、身份证、银行账号保留字符串。身份证号和 E-MAIL 为生成必填；付款方式为托收时银行账号和开户银行必填。有《网络及信息安全承诺书》的已核验套餐表单生成时须填写信息安全责任人姓名、职务及联系方式。正式字段需双方确认。
 
 匹配返回：status（unique/ambiguous/not_found/conflict）、candidates（套餐ID、模板ID及版本、名称、依据）、missing_fields、conflicts。
 
@@ -54,6 +54,17 @@ Demo 模板列表返回 `imported_at`（UTC ISO 8601）；已有模板没有录�
 ## 客户资料收集与虚构工商验收
 
 表单页按商务专线的新装版本显示已核对的两段客户话术。回复识别、缺项回复与员工内部估算在当前页面完成，不发送原始回复或调用外部企业接口。企查查配置暂缓。测试套餐 A/B 保留既有模板，测试套餐 C 增加工商栏，语音测试套餐新增四项实名字段。两者均复用现有匹配、生成和个人下载接口。带语音模板上传及生成要求四项实名映射，格式异常的证件号阻止生成。
+
+### 浏览器演示：已核验原表
+模板管理沿用 `POST /forms/templates/inspect` 和 `POST /forms/templates/import`，已核验原表的检查结果为 `reviewed: true`，包含名称、版本和资费列表。导入创建一条默认停用的模板记录。匹配候选附带 `reviewed_controls`，担保书只提交担保资料；生成仍使用 `POST /forms/generate`，结果中的 `review` 提示手工核对事项。这些扩展只在浏览器演示中启用。
+
+### 工作看板
+联调模式的 `GET /forms/dashboard` 返回 `scope`（team / self）、员工统计和生成记录。只有管理员能读取本工作区全部账号的记录，员工仅能读取自己的记录。报价还没有业务记录，`quote_count` 返回 null。成功生成一次计一次，幂等重试不重复计数。
+`GET /forms/dashboard/records/{id}/file` 按相同权限提供 Word 文件；个人历史接口仍只返回本人的记录。静态 Demo 的身份切换用于虚构数据验收，数据仅存于当前浏览器。
+
+看板默认本周（周一至周日，上海时间）。查询可传 `period=week|month|all|custom`，周/月可传 `offset`（0 表示本期、1 表示上一期），自定义日期传 `from`、`to`（YYYY-MM-DD，含结束日）。响应的 `range` 返回实际统计区间。列表与汇总使用同一区间，打开明细文件仍按账号权限核验。
+
+表单生成页按业务种类、业务名称、业务属性、语音及折扣选条件；如需确认多个版式或付费周期，再单独选择。请求仍带已核对的内部资费编号。新增可选的 `discount_mode`（yes/no）和打折时的 `discount_factor`（如 8.5）。模板有核验折数时拒绝不一致的选项；无核验折数时，记录员工输入并提示在 Word 中人工核对，系统不计算折后资费。
 
 ## 托管站的 Word 套餐导入
 

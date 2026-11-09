@@ -1,3 +1,7 @@
+import { intakePanel } from '../frontend/modules/forms/intake.js';
+import { generatedMaterials } from '../frontend/modules/forms/generate.js';
+import { classifyTariff, matchingBusinessRows, validDiscount } from '../frontend/modules/forms/business-selection.js';
+import { selectedDiscount } from '../backend/modules/forms/preview/rules.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {businessText,parseReply,requiredKeys,matchReplyTariff,followup,validValue,lookupFixture,staffEstimates} from '../frontend/modules/forms/intake-rules.js';
@@ -43,6 +47,45 @@ test('样例按企业全称精确命中；零、分档边界和未知参保数',
   assert.equal(staffEstimates(10).extra_company_size,'10-30人');
   assert.equal(staffEstimates(201).extra_company_size,'200人以上');
   for(const x of ['',null,'未披露','8至10'])assert.equal(staffEstimates(x),null);
+});
+
+test('带空格的经办人电话和 E-MAIL 标签按各自字段识别，保留真正的号码冲突',()=>{
+  const reply=parseReply('5、经办人：测试甲\n6、经办人联系电话（手机）：138-0013-8000\n8、经办人 E-MAIL：qa@example.invalid');
+  assert.deepEqual(reply,{contact_name:['测试甲'],phone:['13800138000'],email:['qa@example.invalid']});
+  assert.ok(validValue('phone',reply.phone[0]) && validValue('email',reply.email[0]));
+  assert.deepEqual(parseReply('经办人联系电话 （手机）：138 0013 8000；手机号：13900139000').phone,['13800138000','13900139000']);
+});
+
+test('业务名合并语音与折扣变体，模板按属性、语音和已知折数匹配',()=>{
+  const base={business_id:'business-line',business_attribute:'new'};
+  const variants=[
+    {id:'plain',reviewed_id:'business-100m-no-voice'},
+    {id:'voice',reviewed_id:'business-100m-voice',voice_required:true},
+    {id:'fixed',carrier_profile:'fttr-b-shanghai-2026-10-21-discount',discount_rate:'8'},
+    {id:'manual',reviewed_id:'business-100m-discount-no-voice'},
+    {id:'200m',reviewed_id:'business-200m-no-voice'}
+  ].map(row=>classifyTariff({...base,...row}));
+  assert.deepEqual(new Set(variants.map(t=>t.name)),new Set(['100M 智云上海专线基础版','200M 智云上海专线升级版']));
+  const criteria={biz:'business-line',business_name:variants[0].name,attr:'new',voice:'no',discount:'yes',discount_rate:'8.5'};
+  assert.deepEqual(matchingBusinessRows(variants,criteria).map(r=>r.id),['manual']);
+  assert.deepEqual(matchingBusinessRows(variants,{...criteria,discount_rate:'8.0'}).map(r=>r.id),['fixed','manual']);
+  assert.deepEqual(matchingBusinessRows(variants,{...criteria,voice:'yes',discount:'no'}).map(r=>r.id),['voice']);
+  assert.deepEqual(matchingBusinessRows(variants,{...criteria,attr:'relocation'}),[]);
+  assert.ok(validDiscount('8.5'));
+  assert.ok(!validDiscount('0')&&!validDiscount('10'));
+  assert.equal(selectedDiscount({discount_mode:'yes',discount_factor:'8.5'},variants[2]),false);
+  assert.deepEqual(selectedDiscount({discount_mode:'yes',discount_factor:'8.5'},variants[3]),{mode:'yes',factor:'8.5',manual:true});
+});
+
+test('手续材料只在生成结果中按表单语音属性显示，不猜未标注模板',()=>{
+  const tariff={business_id:'business-line',business_attribute:'new'};
+  assert.doesNotMatch(intakePanel(),/手续材料提示/);
+  assert.match(generatedMaterials({...tariff,voice_required:true}),/使用人（实名制）身份证正反面复印件/);
+  assert.match(generatedMaterials({...tariff,voice_required:true}),/经办人本人在/);
+  assert.doesNotMatch(generatedMaterials({...tariff,voice_required:false}),/法定代表人|上门受理/);
+  assert.match(generatedMaterials({...tariff,voice_required:false}),/复制手续材料提示/);
+  assert.doesNotMatch(generatedMaterials({...tariff,reviewed_id:'business-ai-v1',voice_required:false}),/复制手续材料提示/);
+  assert.equal(generatedMaterials({...tariff,reviewed_id:'business-guarantee'}),'');
 });
 
 test('编号回复中，带分隔符的手机号、带空格的邮箱标签和经办人姓名分别填入', () => {

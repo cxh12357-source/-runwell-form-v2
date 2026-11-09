@@ -113,8 +113,13 @@ class Store {
     return this.db.prepare('SELECT snapshot FROM records WHERE owner=? ORDER BY rowid DESC').all(owner).map(r => JSON.parse(r.snapshot));
   }
 
-  recordFile(id, owner) {
-    const row = this.db.prepare('SELECT file FROM records WHERE id=? AND owner=?').get(id, owner);
+  teamHistory() {
+    return this.db.prepare('SELECT snapshot FROM records ORDER BY rowid DESC').all().map(r => JSON.parse(r.snapshot));
+  }
+
+  recordFile(id, owner, team=false) {
+    const row = team ? this.db.prepare('SELECT file FROM records WHERE id=?').get(id) :
+      this.db.prepare('SELECT file FROM records WHERE id=? AND owner=?').get(id, owner);
     insist(row, '找不到生成记录。', 404);
     return row.file;
   }
