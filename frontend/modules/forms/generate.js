@@ -31,8 +31,8 @@ export function generatedMaterials(tariff) {
 export function generation(labels) {
   return generationShell('<fieldset id="application-fields" class="application-fields">' + intakePanel() +
     '<div class="divider"></div><h3>客户资料</h3><button id="fill-example" type="button">用虚构样例补全空白栏</button><div class="field-grid">' +
-    customerFields.map(key => field(key, key === 'id_number' ? '* 身份证号码' : key === 'email' ? '* E-MAIL' : labels[key], key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text')).join('') +
-    '<label>付款方式<select name="payment_method" required><option value="">请选择</option><option value="cash">现金</option><option value="collection">托收</option></select></label></div>' +
+    customerFields.map(key => field(key, '* ' + (key === 'id_number' ? '身份证号码' : key === 'email' ? 'E-MAIL' : labels[key]), key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text')).join('') +
+    '<label>* 付款方式<select name="payment_method" required><option value="">请选择</option><option value="cash">现金</option><option value="collection">托收</option></select></label></div>' +
     '<fieldset hidden id="bank-fields" disabled><div class="field-grid">' + field('bank_account', labels.bank_account) +
     field('bank_name', labels.bank_name) + '</div></fieldset>' + internalPanel() + '</fieldset><div id="extra" class="field-grid"></div>');
 }
