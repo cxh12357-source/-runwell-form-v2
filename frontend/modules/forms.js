@@ -16,7 +16,7 @@ function selector(catalog) {
 export async function renderForms(path) {
   const { data: mode } = await get('/forms/mode');
   if (mode.preview) return renderPreview(path, tabs, mode.hosted === true);
-  if (path === '/dashboard') return '<h1>看板</h1><section class="panel"><p>当前是结构预览。请开启表单联调模式后，使用管理员或员工账号查看工作记录。</p></section>';
+  if (path === '/dashboard') return '<h1>工作量统计</h1><section class="panel"><p>当前是结构预览。请开启表单联调模式后，使用管理员或员工账号查看工作记录。</p></section>';
   const [{ data: catalog }, resource] = await Promise.all([
     get('/catalog'),
     path === '/forms/history' ? get('/forms/records') : path === '/forms/templates' ? get('/forms/templates') : Promise.resolve(null)

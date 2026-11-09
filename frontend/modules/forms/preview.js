@@ -156,7 +156,7 @@ export async function renderPreview(path, tabs, hosted = false) {
   pendingViews.set(viewId, state);
   if (pendingViews.size > 8) pendingViews.delete(pendingViews.keys().next().value);
   const board=path==='/dashboard';
-  return '<a class="back" href="#/">← 返回工作台</a><h1>'+(board?'看板':'表单填写')+'</h1><p class="lead">仅使用虚构客户资料和测试套餐。</p>' +
+  return '<a class="back" href="#/">← 返回工作台</a><h1>'+(board?'工作量统计':'表单填写')+'</h1><p class="lead">仅使用虚构客户资料和测试套餐。</p>' +
     (board?'':'<nav class="tabs" aria-label="表单子板块">' + tabs.map(([url, name]) => '<a href="#' + url + '" ' +
     (path === url ? 'aria-current="page"' : '') + '>' + name + '</a>').join('') + '</nav>') + '<section class="panel" id="forms-preview" data-view="' +
     viewId + '"><h2>' + (board?'工作统计':tabs.find(t => t[0] === path)[1]) + '</h2>' + (state ? '<p class="hint">当前身份　' + esc(state.workspace.actor.id) +

@@ -30,7 +30,7 @@ async function render(event) {
     '">工作台<span class="nav-chevron" aria-hidden="true"></span></button>' +
     '<ul id="workbench-children" class="nav-children" aria-label="工作台子导航"' + (workbenchExpanded ? '' : ' hidden') + '>' +
     sections.map(section => '<li>' + link(section) + '</li>').join('') +
-    '</ul></li><li>' + link({path:'/dashboard',name:'看板'}) + '</li><li>' + link({path:'/settings',name:'设置'}) + '</li></ul>';
+    '</ul></li><li>' + link({path:'/dashboard',name:'工作量统计'}) + '</li><li>' + link({path:'/settings',name:'设置'}) + '</li></ul>';
   const toggle = navigation.querySelector('.nav-parent');
   toggle.onclick = () => {
     workbenchExpanded = !workbenchExpanded;
