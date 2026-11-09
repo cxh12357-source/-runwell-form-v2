@@ -12,7 +12,14 @@ async function render() {
   const request = ++sequence;
   let path = location.hash.slice(1) || '/';
   if (path === '/forms') path = '/forms/generate';
-  document.querySelector('#navigation').innerHTML = [{ path: '/', name: '工作台' }, ...sections, {path:'/settings',name:'设置'}].map(s => `<a href="#${s.path}" ${s.path === '/' ? path === '/' ? 'aria-current="page"' : '' : path.startsWith(s.path) ? 'aria-current="page"' : ''}>${s.name}</a>`).join('');
+  const active = route => path === route || (route !== '/' && path.startsWith(route + '/'));
+  const link = ({path: route, name}, className = '') => '<a href="#' + route + '" class="' + className + '"' +
+    (active(route) ? ' aria-current="page"' : '') + '>' + name + '</a>';
+  document.querySelector('#navigation').innerHTML =
+    '<ul class="nav-root"><li class="nav-workbench' + (sections.some(section => active(section.path)) ? ' has-current-child' : '') + '">' +
+    link({path:'/',name:'工作台'}, 'nav-parent') + '<ul class="nav-children" aria-label="工作台子导航">' +
+    sections.map(section => '<li>' + link(section) + '</li>').join('') +
+    '</ul></li><li>' + link({path:'/settings',name:'设置'}) + '</li></ul>';
   view.innerHTML = '<p role="status">正在加载…</p>';
   try {
     let html;
