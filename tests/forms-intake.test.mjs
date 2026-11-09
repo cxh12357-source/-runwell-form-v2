@@ -44,3 +44,10 @@ test('样例按企业全称精确命中；零、分档边界和未知参保数',
   assert.equal(staffEstimates(201).extra_company_size,'200人以上');
   for(const x of ['',null,'未披露','8至10'])assert.equal(staffEstimates(x),null);
 });
+
+test('带空格的经办人电话和 E-MAIL 标签按各自字段识别，保留真正的号码冲突',()=>{
+  const reply=parseReply('5、经办人：测试甲\n6、经办人联系电话（手机）：138-0013-8000\n8、经办人 E-MAIL：qa@example.invalid');
+  assert.deepEqual(reply,{contact_name:['测试甲'],phone:['13800138000'],email:['qa@example.invalid']});
+  assert.ok(validValue('phone',reply.phone[0]) && validValue('email',reply.email[0]));
+  assert.deepEqual(parseReply('经办人联系电话 （手机）：138 0013 8000；手机号：13900139000').phone,['13800138000','13900139000']);
+});

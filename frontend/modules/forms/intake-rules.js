@@ -67,13 +67,18 @@ export const companyTitles = {
 };
 const aliases = Object.entries(fields).flatMap(([key,names]) => names.map(name => [name.normalize('NFKC').toLowerCase(),key]));
 const keyByAlias = new Map(aliases);
-const escaped = [...keyByAlias.keys()].sort((a,b) => b.length-a.length).map(s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
+const escaped = [...keyByAlias.keys()].sort((a,b) => b.length-a.length).map(alias =>
+  [...alias].map(ch=>ch==='-'?'[-‐‑–—]':ch.replace(/[.*+?^$(){}|[\]\\]/g,'\\$&')).join('[ \\t]*'));
 const marker = new RegExp('(?:^|[\\n,;。]|[ \\t]+)[ \\t]*(?:\\d{1,2}[、.．)）][ \\t]*)?('+escaped.join('|')+')[ \\t]*(?:[:=]|是|为|[ \\t]+)[ \\t]*','giu');
 const missingValue = /^(?:[-—/]|无|待定|暂无|未提供|不详|待补充|现金\s*[/／]\s*托收)$/;
 function normalize(key, value) {
   let text = value.trim().replace(/[。;；,，、]+$/u,'').trim();
   if (!text || missingValue.test(text)) return '';
   if (key==='payment_method') return ({现金:'cash',托收:'collection',cash:'cash',collection:'collection'})[text] || text;
+  if (key==='phone') {
+    const digits=text.replace(/[ \t‐‑–—-]/gu,'');
+    if (/^1\d{10}$/.test(digits)) return digits;
+  }
   if (key==='bank_account') text=text.replace(/[ -]/g,'');
   if (['id_number','extra_legal_id','extra_user_id'].includes(key)) text=text.toUpperCase();
   return text;
@@ -87,7 +92,7 @@ export function parseReply(raw) {
   }
   const matches=[...text.matchAll(marker)];
   for (const [i,m] of matches.entries()) {
-    const key=keyByAlias.get(m[1].toLowerCase());
+    const key=keyByAlias.get(m[1].toLowerCase().replace(/[ \t]/g,'').replace(/[‐‑–—]/g,'-'));
     const segment=text.slice(m.index+m[0].length, matches[i+1]?.index ?? text.length);
     const value=segment.split(/[\n,;。]/)[0].trim();
     add(key,value);
@@ -118,6 +123,10 @@ export function validValue(key, value) {
   if (key==='phone') return /^1\d{10}$/.test(value);
   if (['id_number','extra_legal_id','extra_user_id'].includes(key)) return /^\d{17}[\dX]$/i.test(value);
   if (key==='email') return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  if (key==='phone') {
+    const digits=text.replace(/[ \t‐‑–—-]/gu,'');
+    if (/^1\d{10}$/.test(digits)) return digits;
+  }
   if (key==='bank_account') return /^\d{6,32}$/.test(value);
   if (key==='payment_method') return ['cash','collection'].includes(value);
   return true;
