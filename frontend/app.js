@@ -8,18 +8,30 @@ document.querySelector('.skip').addEventListener('click', event => {
   document.querySelector('#content').focus();
 });
 let sequence = 0;
+let workbenchExpanded = false;
 async function render() {
   const request = ++sequence;
   let path = location.hash.slice(1) || '/';
   if (path === '/forms') path = '/forms/generate';
   const active = route => path === route || (route !== '/' && path.startsWith(route + '/'));
-  const link = ({path: route, name}, className = '') => '<a href="#' + route + '" class="' + className + '"' +
+  const link = ({path: route, name}) => '<a href="#' + route + '"' +
     (active(route) ? ' aria-current="page"' : '') + '>' + name + '</a>';
-  document.querySelector('#navigation').innerHTML =
-    '<ul class="nav-root"><li class="nav-workbench' + (sections.some(section => active(section.path)) ? ' has-current-child' : '') + '">' +
-    link({path:'/',name:'工作台'}, 'nav-parent') + '<ul class="nav-children" aria-label="工作台子导航">' +
+  const activeChild = sections.some(section => active(section.path));
+  if (activeChild) workbenchExpanded = true;
+  const navigation = document.querySelector('#navigation');
+  navigation.innerHTML =
+    '<ul class="nav-root"><li class="nav-workbench' + (activeChild ? ' has-current-child' : '') + '">' +
+    '<button type="button" class="nav-parent" aria-controls="workbench-children" aria-expanded="' + workbenchExpanded +
+    '">工作台<span class="nav-chevron" aria-hidden="true"></span></button>' +
+    '<ul id="workbench-children" class="nav-children" aria-label="工作台子导航"' + (workbenchExpanded ? '' : ' hidden') + '>' +
     sections.map(section => '<li>' + link(section) + '</li>').join('') +
     '</ul></li><li>' + link({path:'/settings',name:'设置'}) + '</li></ul>';
+  const toggle = navigation.querySelector('.nav-parent');
+  toggle.onclick = () => {
+    workbenchExpanded = !workbenchExpanded;
+    toggle.setAttribute('aria-expanded', String(workbenchExpanded));
+    navigation.querySelector('#workbench-children').hidden = !workbenchExpanded;
+  };
   view.innerHTML = '<p role="status">正在加载…</p>';
   try {
     let html;
