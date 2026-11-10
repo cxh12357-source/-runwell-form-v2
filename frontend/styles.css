@@ -17,6 +17,15 @@
 [data-delete-confirm] { color: #9b2525; }
 
 .application-fields { min-width: 0; }
+.profile-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:20px 0 12px; }
+.profile-heading h3 { margin:0; }
+#edit-profile, #lookup-fixture { border:1px solid #bacbdd; border-radius:6px; background:#f5f8fc; color:#214f86; cursor:pointer; padding:8px 12px; font:inherit; }
+#company-lookup { margin-top:12px; }
+#company-lookup[hidden], #missing-profile[hidden] { display:none; }
+.profile-section { border:1px solid #dce4ee; border-radius:8px; padding:0 14px 14px; margin-top:10px; }
+.profile-section:not([open]) { padding-bottom:0; }
+.profile-section > summary { cursor:pointer; color:#214f86; font-weight:650; padding:12px 0; }
+#missing-profile { margin-top:16px; }
 #billing-address-field[hidden], #extra > label[hidden], #default-fields > label[hidden], #missing-default-fields > label[hidden], #missing-defaults[hidden], #default-settings[hidden] { display: none; }
 #extra:empty { display: none; }
 #default-settings { margin-top: 24px; }
