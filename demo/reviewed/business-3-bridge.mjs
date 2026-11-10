@@ -4,12 +4,14 @@ import {buildReviewed17Edits} from './reviewed-17-locators.mjs';
 import {fillOriginalDocx} from './full-word.mjs';
 import {estimateBusiness3Layout} from './business-3-layout.mjs';
 import {BusinessInputError} from './business-input-error.mjs';
+import {packageFields,packageOptions,buildPackageEdits} from './package-options.mjs';
+import {adjustFirstPageIdentityLayout,hasWiderIdentityLayout} from './identity-layout.mjs';
 import {buildAuthorizationEdits} from './business-authorization.mjs';
 import {buildFirstPageEdits,materializeFirstPageBoxes} from './first-page-fields.mjs';
 const W='http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const REQUIRED=['company_name','extra_credit_code','extra_industry','install_address','contact_name','id_number','phone','email','extra_company_size','extra_computer_count'];
 const SECURITY={security_name:'信息安全责任人姓名',security_role:'信息安全责任人职务',security_phone:'信息安全责任人联系方式'};
-const ALLOWED=new Set([...REQUIRED,...Object.keys(SECURITY),'cycle','billing_mode','billing_address','manual_billing_ack','payment_method','bank_account','install_zip','billing_zip','job_title','fax','service_use','application_date','service_type']);
+const ALLOWED=new Set([...REQUIRED,...Object.keys(SECURITY),...packageFields,'cycle','billing_mode','billing_address','manual_billing_ack','payment_method','bank_account','install_zip','billing_zip','job_title','fax','service_use','application_date','service_type']);
 const FIELD_NAMES={company_name:'企业全称',extra_credit_code:'统一社会信用代码',extra_industry:'企业所属行业',install_address:'安装地址',contact_name:'经办人姓名',id_number:'身份证号',phone:'经办人手机号',email:'电子邮箱',extra_company_size:'企业规模',extra_computer_count:'企业计算机数量'};
 const digest=async bytes=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
 
@@ -62,7 +64,8 @@ export async function fillReviewedBusiness3(templateId,bytes,values,dependencies
   validateBusiness3Values(values);
   const spec=specs[templateId];
   if(!(bytes instanceof Uint8Array) || !bytes.length || bytes.length>10_000_000 || await digest(bytes)!==spec.sha256)throw new Error('原表未通过哈希校验。');
-  const {fits}=estimateBusiness3Layout(values);
+  const wider=hasWiderIdentityLayout(templateId);
+  const {fits}=estimateBusiness3Layout(values,{wideIdentity:wider});
   const base=Object.fromEntries(REQUIRED.map(key=>[key,values[key]]));
   const {edits}=await buildReviewed17Edits(bytes,base,dependencies);
   if(edits.length!==REQUIRED.length)throw new Error('原表字段定位不完整。');
@@ -73,7 +76,21 @@ export async function fillReviewedBusiness3(templateId,bytes,values,dependencies
   const {unzipSync,sax}=dependencies,parts=unzipSync(bytes),raw=parts['word/document.xml'];
   if(!raw)throw new Error('原表正文缺失。');
   const xml=new TextDecoder('utf-8',{fatal:true}).decode(raw),cycle=spec.cycles[values.cycle];
-  if(templateId.endsWith('-no-voice')) edits.push(...buildAuthorizationEdits(bytes,{...values,service_type:'宽带',application_type:'新装'},dependencies));
+  if(packageOptions(templateId))edits.push(...buildPackageEdits(templateId,bytes,values,dependencies));
+  else if(packageFields.some(key=>values[key]!==undefined && values[key]!==''))
+    throw new BusinessInputError('当前文档的套餐选项尚未核验，请人工核对。');
+  const noVoice=templateId.endsWith('-no-voice');
+  const voiceOptions=noVoice && ['package_landline_count','package_cloudphone_count','package_mobile_count','package_secondary_count'].some(key=>Number(values[key])>0);
+  if(noVoice){
+    const categories=['宽带'];
+    if(Number(values.package_landline_count)>0)categories.push('固话');
+    if(Number(values.package_mobile_count)>0)categories.push('手机');
+    // The document does not establish whether 商云通 belongs under 固话.
+    // Keep that field blank for staff instead of writing an incomplete value.
+    const uncertain=Number(values.package_cloudphone_count)>0;
+    edits.push(...buildAuthorizationEdits(bytes,{...values,service_type:categories.join('、'),application_type:'新装'},dependencies,
+      {skipFields:uncertain?['service_type']:[]}));
+  }
   edits.push(...buildFirstPageEdits(xml,values,spec,dependencies));
   const needed=[cycle];
   const found=await paragraphs(xml,new Set(needed.map(x=>x.paragraph)),sax);
@@ -81,7 +98,12 @@ export async function fillReviewedBusiness3(templateId,bytes,values,dependencies
   const priceText=await checked(cycle);
   if(priceText.slice(cycle.start,cycle.end)!=='□')throw new Error('套餐选项不符。');
   edits.push({part:'word/document.xml',paragraph:cycle.paragraph,text:cycle.text,expected:priceText,start:cycle.start,end:cycle.end,value:'■'});
-  const file=materializeFirstPageBoxes(fillOriginalDocx(bytes,edits,dependencies),values,spec,dependencies);
-  return {file,manualActions:values.billing_mode==='other_manual'?['billing_address']:[],layoutReviewRequired:true,
-    unmappedFields:['voice_identity','line_count','service_options','signature']};
+  let filled=fillOriginalDocx(bytes,edits,dependencies);
+  if(wider)filled=adjustFirstPageIdentityLayout(filled,dependencies);
+  const file=materializeFirstPageBoxes(filled,values,spec,dependencies);
+  const pending=packageOptions(templateId)
+    ? [...(templateId.endsWith('-no-voice')?['delegate_information']:['voice_identity']),'signature']
+    : ['voice_identity','line_count','service_options','signature'];
+  return {file,manualActions:[...(values.billing_mode==='other_manual'?['billing_address']:[]),...(voiceOptions?['voice_template','authorization','voice_identity']:[])],layoutReviewRequired:true,
+    unmappedFields:pending};
 }
