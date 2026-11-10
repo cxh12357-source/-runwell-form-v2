@@ -27,6 +27,7 @@ export function bindPackageOptions(form) {
   function update() {
     if (!enabled) return;
     const mode=control('package_line_type');
+    root.querySelector('[data-package-line-status]').textContent=mode.value==='existing'?'在用宽带':'纯新装宽带';
     const existing=control('package_existing_number');
     const existingLabel=root.querySelector('[data-package-existing]');
     existingLabel.hidden=mode.value!=='existing';
@@ -64,7 +65,10 @@ export function bindPackageOptions(form) {
   form.addEventListener('change',update);
   // An invalid control inside a closed details element cannot receive focus.
   form.addEventListener('invalid',event=>{
-    if (enabled && root.contains(event.target)) root.querySelector('details').open=true;
+    if (enabled && root.contains(event.target)) {
+      let details=event.target.closest('details');
+      while(details && root.contains(details)) { details.open=true; details=details.parentElement.closest('details'); }
+    }
   },true);
 
   return {
@@ -75,15 +79,21 @@ export function bindPackageOptions(form) {
       root.replaceChildren();
       if(!enabled)return;
       const speed=metadata.speed.filter(key=>Object.hasOwn(speedLabels,key));
-      root.innerHTML='<h3>套餐办理方式</h3><div class="field-grid">'+
-        '<label>套餐类型<select name="package_line_type"><option value="new">纯新装宽带</option><option value="existing">在用宽带</option></select></label>'+
-        '<label data-package-existing hidden>在用宽带号码<input name="package_existing_number" maxlength="40" pattern="(?:[A-Za-z0-9]|-){1,40}" title="请输入1至40位英文字母、数字或连字符" autocomplete="off" disabled></label></div>'+
-        '<details class="package-details"><summary>选择增值和收费包</summary><p class="hint">只勾选客户确认的业务；未勾选的项目不订购。涉及数量的项目需填写实际数量。收费从设备优惠截止后，请核实实际资费。</p>'+
-        '<div class="package-list">'+checks.map(([key,label])=>'<label class="package-check"><input type="checkbox" name="'+key+'" value="1"><span>'+label+'</span></label>').join('')+
-        counts.map(([key,label,max])=>'<div class="package-count"><label class="package-check"><input type="checkbox" data-package-toggle="'+key+'"><span>订购'+label.replace(/线数|数量/,'')+'</span></label>'+
-          '<label data-package-count-label hidden>'+label+'<input type="number" name="'+key+'" min="1" max="'+max+'" step="1" inputmode="numeric" disabled></label></div>').join('')+
-        '<label>收费上行升速包<select name="package_speed"><option value="">不订购</option>'+speed.map(key=>'<option value="'+key+'">'+speedLabels[key]+'</option>').join('')+'</select></label></div>'+
-        '<p class="hint" data-package-errors aria-live="polite"></p></details>'+
+      const checkbox=([key,label])=>'<label class="package-check"><input type="checkbox" name="'+key+'" value="1"><span>'+label+'</span></label>';
+      const count=([key,label,max])=>'<div class="package-count"><label class="package-check"><input type="checkbox" data-package-toggle="'+key+'"><span>订购'+label.replace(/线数|数量/,'')+'</span></label>'+
+        '<label data-package-count-label hidden>'+label+'<input type="number" name="'+key+'" min="1" max="'+max+'" step="1" inputmode="numeric" disabled></label></div>';
+      root.innerHTML='<h3>套餐办理方式</h3><p>办理方式：<span data-package-line-status>纯新装宽带</span></p>'+
+        '<p class="hint">只勾选客户确认的业务；未勾选的项目不订购。涉及数量的项目需填写实际数量。</p>'+
+        '<details class="package-details"><summary>1、基础套餐申请信息</summary>'+
+        '<details><summary>修改办理方式</summary><div class="field-grid">'+
+        '<label>办理方式<select name="package_line_type"><option value="new">纯新装宽带</option><option value="existing">在用宽带</option></select></label>'+
+        '<label data-package-existing hidden>在用宽带号码<input name="package_existing_number" maxlength="40" pattern="(?:[A-Za-z0-9]|-){1,40}" title="请输入1至40位英文字母、数字或连字符" autocomplete="off" disabled></label></div></details>'+
+        '<div class="package-list">'+checks.slice(0,2).map(checkbox).join('')+'</div></details>'+
+        '<details class="package-details"><summary>2、增值免费可选包</summary><div class="package-list">'+
+        checks.slice(2).map(checkbox).join('')+counts.slice(0,4).map(count).join('')+'</div></details>'+
+        '<details class="package-details"><summary>3、收费可选包</summary><p class="hint">收费从设备优惠截止后，请核实实际资费。</p><div class="package-list">'+
+        count(counts[4])+'<label>收费上行升速包<select name="package_speed"><option value="">不订购</option>'+speed.map(key=>'<option value="'+key+'">'+speedLabels[key]+'</option>').join('')+'</select></label></div></details>'+
+        '<p class="hint" data-package-errors aria-live="polite"></p>'+
         '<p class="notice slim" data-package-voice-warning aria-live="polite" hidden>已选择语音或移动业务，当前是不带语音模板；请核对模板、授权书、实名资料及手续材料。</p>';
       update();
     },

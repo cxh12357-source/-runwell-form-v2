@@ -57,4 +57,15 @@ for (const october of [false,true]) {
     assert.throws(()=>render({choice_line:'1'}),/在用宽带号码/);
     assert.doesNotThrow(()=>render({choice_line:'1',existing_line:'虚构号码123'}));
   });
+
+  test(label+'邮编、经办人职务和申请日期允许留空',()=>{
+    const prepared=analyzeCarrier(makeCarrierFixture({october}),'standard',xmlRuntime);
+    const out=renderCarrier(prepared.file,{...customer,install_zip:'',billing_zip:'',job_title:'',fax:'',application_date:'',service_use:'办公上网'},
+      {carrier_profile:prepared.profile,carrier_rate:'0'},xmlRuntime);
+    const xml=strFromU8(unzipSync(out)['word/document.xml']);
+    assert.match(xml,/办公上网/);
+    assert.doesNotMatch(xml,/\{\{(?:install_zip|billing_zip|job_title|fax|sign_y|sign_m|sign_d)\}\}/);
+    assert.throws(()=>renderCarrier(prepared.file,{...customer,install_zip:'123'},
+      {carrier_profile:prepared.profile,carrier_rate:'0'},xmlRuntime),/6 位/);
+  });
 }

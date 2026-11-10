@@ -140,7 +140,7 @@ test('浏览器演示从客户回复生成 Word，授权书使用客户单位且
   const set=(key,value,type='change')=>{const input=form.elements.namedItem(key);input.value=value;input.dispatchEvent(new dom.window.Event(type,{bubbles:true}));};
   for(const [key,value] of [['biz','business-line'],['business_name','100M 智云上海专线基础版'],['attr','new'],['voice','yes'],['discount','no'],['pay_cycle',tariff.id]])set(key,value);
   await root.querySelector('#match').onclick();
-  root.querySelector('#reply-text').value='企业全称：虚构测试企业，安装地址：虚构路8号 邮编：200001，账单地址：与安装地址相同，经办人：测试甲，手机号：10000000000，身份证号：000000000000000000，邮箱：qa@example.invalid，付款方式：现金，法定代表人：测试法代，法定代表人身份证号码：111111111111111111，使用人（实名制）：测试使用人，使用人（实名制）身份证号码：222222222222222222';
+  root.querySelector('#reply-text').value='企业全称：虚构测试企业，安装地址：虚构路8号，账单地址：与安装地址相同，经办人：测试甲，手机号：10000000000，身份证号：000000000000000000，邮箱：qa@example.invalid，付款方式：现金，法定代表人：测试法代，法定代表人身份证号码：111111111111111111，使用人（实名制）：测试使用人，使用人（实名制）身份证号码：222222222222222222';
   root.querySelector('#read-reply').click();root.querySelector('#lookup-fixture').click();await Promise.resolve();
   set('extra_industry','软件','input');
   const code=form.elements.extra_credit_code.value;
@@ -149,7 +149,8 @@ test('浏览器演示从客户回复生成 Word，授权书使用客户单位且
   assert.equal(root.querySelector('#missing-profile').hidden,false);
   assert.match(root.querySelector('#missing-profile').textContent,/统一社会信用代码/);
   set('extra_credit_code',code,'input');
-  assert.equal(form.elements.service_use.value,'办公');
+  assert.equal(form.elements.service_use.value,'办公上网');
+  for(const key of ['install_zip','billing_zip','job_title','fax','application_date'])assert.equal(form.elements[key].value,'',key+' 留空');
   assert.equal(form.elements.service_type_choice.value,'0');
   assert.equal(form.checkValidity(),true);
   await form.onsubmit({preventDefault(){}});
@@ -163,6 +164,8 @@ test('浏览器演示从客户回复生成 Word，授权书使用客户单位且
   assert.ok(auth.includes(`本单位虚构测试企业（统一社会信用代码为${code}）`));
   assert.ok(auth.includes('本单位员工（身份证号为）'));
   assert.ok(auth.includes('办理宽带（手机/固话/宽带）业务的新装'));
-  assert.ok(auth.includes('实际用途为办公'));
+  assert.ok(auth.includes('实际用途为办公上网'));
   assert.ok(lines.some(line=>line.includes('虚构测试企业')));
+  const signature=lines.findIndex(line=>/^经办人身份证号码[:：]/.test(line));
+  assert.ok(signature>=0 && lines.slice(signature+1,signature+20).some(line=>/^日期[:：]年月日$/.test(line)));
 });

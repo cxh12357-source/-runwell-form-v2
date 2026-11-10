@@ -9,6 +9,7 @@ import {identifyReviewed, generateReviewed} from './reviewed-integration.mjs';
 import {bundleDemo} from './build.mjs';
 import {packageOptions} from './reviewed/package-options.mjs';
 import {generation,bindGeneration} from '../frontend/modules/forms/generate.js';
+import {bindPackageOptions} from '../frontend/modules/forms/package-options.js';
 import {labels} from '../backend/modules/forms/preview/rules.mjs';
 import {generatedMaterials} from '../frontend/modules/forms/generate.js';
 
@@ -30,6 +31,34 @@ function paragraphs(xml) {
   parser.write(xml).close();return out;
 }
 const para=file=>paragraphs(strFromU8(unzipSync(file)['word/document.xml']));
+
+test('套餐按原表分三组，默认纯新装且保留在用宽带入口',()=>{
+  const dom=new JSDOM('<form><section id="package-options"></section></form>');
+  const form=dom.window.document.querySelector('form'),root=form.querySelector('#package-options');
+  bindPackageOptions(form).choose(packageOptions('business-100m-no-voice'));
+  const sections=[...root.querySelectorAll(':scope > details.package-details')];
+  assert.deepEqual(sections.map(el=>el.querySelector(':scope > summary').textContent),
+    ['1、基础套餐申请信息','2、增值免费可选包','3、收费可选包']);
+  assert.ok(sections.every(el=>!el.open));
+  assert.equal(form.elements.package_line_type.value,'new');
+  assert.equal(root.querySelector('[data-package-line-status]').textContent,'纯新装宽带');
+  for(const key of ['package_fttr','package_disk'])assert.ok(sections[0].contains(form.elements[key]));
+  for(const key of ['package_free_ext','package_plugin','package_landline_count','package_cloudphone_count','package_mobile_count','package_secondary_count'])
+    assert.ok(sections[1].contains(form.elements[key]),key);
+  for(const key of ['package_paid_ext_count','package_speed'])assert.ok(sections[2].contains(form.elements[key]),key);
+  const line=form.elements.package_line_type;
+  assert.equal(line.closest('details').open,false,'切换入口默认收起');
+  line.value='existing';line.dispatchEvent(new dom.window.Event('change',{bubbles:true}));
+  assert.equal(root.querySelector('[data-package-line-status]').textContent,'在用宽带');
+  assert.equal(form.elements.package_existing_number.required,true);
+  assert.equal(form.checkValidity(),false);
+  assert.equal(sections[0].open,true,'条件必填错误会展开所属分组');
+  assert.equal(line.closest('details').open,true,'条件必填错误会展开修改入口');
+  form.elements.package_existing_number.value='TEST-123';
+  form.elements.package_existing_number.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  assert.equal(form.checkValidity(),true);
+  dom.window.close();
+});
 
 test('不带语音模板选语音时，授权业务类型准确写入或留空并提醒核对',async t=>{
   const templates=[documents[0],documents[3]];

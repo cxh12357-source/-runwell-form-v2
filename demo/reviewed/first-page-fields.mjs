@@ -111,13 +111,15 @@ export function buildFirstPageEdits(xml, values, spec, {sax}) {
   const {p,i}=matches[0], iIdentity=i, index=p.texts.length-1, original=p.texts[index];
   if(index<0)throw new Error('经办人身份证号码位置不明确。');
   edits.push({part:'word/document.xml',paragraph:i,text:index,expected:original,start:original.length,end:original.length,value:values.id_number});
-  const dates=paragraphs.map((p,i)=>({p,i})).filter(({p})=>/^日期\s*[:：]\s*年\s*月\s*日\s*$/.test(p.texts.join('')));
-  // This is the date on the signature page immediately following the identity field.
-  const date=dates.find(({i})=>i>iIdentity && i<iIdentity+20);
-  if(!date || dates.filter(({i})=>i>iIdentity && i<iIdentity+20).length!==1)throw new Error('申请日期位置不明确。');
-  const [year,month,day]=values.application_date.split('-');
-  if(date.p.texts.length!==1)throw new Error('申请日期格式不受支持。');
-  const dateText=date.p.texts[0], replacement=dateText.replace(/(日期\s*[:：])\s*年\s*月\s*日\s*$/,(_,prefix)=>prefix+year+'年'+Number(month)+'月'+Number(day)+'日');
-  edits.push({part:'word/document.xml',paragraph:date.i,text:0,expected:dateText,start:0,end:dateText.length,value:replacement});
+  if(values.application_date) {
+    const dates=paragraphs.map((p,i)=>({p,i})).filter(({p})=>/^日期\s*[:：]\s*年\s*月\s*日\s*$/.test(p.texts.join('')));
+    // This is the date on the signature page immediately following the identity field.
+    const date=dates.find(({i})=>i>iIdentity && i<iIdentity+20);
+    if(!date || dates.filter(({i})=>i>iIdentity && i<iIdentity+20).length!==1)throw new Error('申请日期位置不明确。');
+    const [year,month,day]=values.application_date.split('-');
+    if(date.p.texts.length!==1)throw new Error('申请日期格式不受支持。');
+    const dateText=date.p.texts[0], replacement=dateText.replace(/(日期\s*[:：])\s*年\s*月\s*日\s*$/,(_,prefix)=>prefix+year+'年'+Number(month)+'月'+Number(day)+'日');
+    edits.push({part:'word/document.xml',paragraph:date.i,text:0,expected:dateText,start:0,end:dateText.length,value:replacement});
+  }
   return edits;
 }

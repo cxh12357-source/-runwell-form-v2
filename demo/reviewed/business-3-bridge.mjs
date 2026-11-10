@@ -27,11 +27,12 @@ export function validateBusiness3Values(values, {requireSupplemental=true}={}) {
     if(typeof value!=='string' || !value || value!==value.trim() || value.length>40 || !value.isWellFormed() || /[\x00-\x1f\x7f\ufffe\uffff]/u.test(value))throw new BusinessInputError('请填写并核对'+label+'。');
   }
   if(requireSupplemental && (typeof values.service_use!=='string' || !values.service_use || values.service_use!==values.service_use.trim() || values.service_use.length>200 || !values.service_use.isWellFormed() || /[\x00-\x1f\x7f\ufffe\uffff]/u.test(values.service_use))) throw new BusinessInputError('请填写并核对业务用途。');
-  if(requireSupplemental && (typeof values.application_date!=='string' || !/^\d{4}-\d{2}-\d{2}$/.test(values.application_date) || !Number.isFinite(Date.parse(values.application_date+'T00:00:00Z')) || new Date(values.application_date+'T00:00:00Z').toISOString().slice(0,10)!==values.application_date)) throw new BusinessInputError('请填写有效的申请日期。');
+  const applicationDate=values.application_date ?? '';
+  if(typeof applicationDate!=='string' || applicationDate && (!/^\d{4}-\d{2}-\d{2}$/.test(applicationDate) || !Number.isFinite(Date.parse(applicationDate+'T00:00:00Z')) || new Date(applicationDate+'T00:00:00Z').toISOString().slice(0,10)!==applicationDate)) throw new BusinessInputError('请填写有效的申请日期。');
   for(const key of ['install_zip','billing_zip','job_title','fax']) {
     const v=values[key] ?? '';
     if(typeof v!=='string' || v!==v.trim() || v.length>200 || !v.isWellFormed() || /[\x00-\x1f\x7f\ufffe\uffff]/u.test(v)) throw new BusinessInputError('请核对补充资料。');
-    if(key.endsWith('_zip') && (requireSupplemental || v) && !/^\d{6}$/.test(v)) throw new BusinessInputError('邮编应为6位数字。');
+    if(key.endsWith('_zip') && v && !/^\d{6}$/.test(v)) throw new BusinessInputError('邮编应为6位数字。');
   }
   if(!/^[0-9A-Z]{18}$/.test(values.extra_credit_code)) throw new BusinessInputError('统一社会信用代码应为18位数字或大写字母，请核对后重试。');
   if(!/^\d{17}[\dX]$/i.test(values.id_number)) throw new BusinessInputError('身份证号应为18位，末位可为X，请核对后重试。');

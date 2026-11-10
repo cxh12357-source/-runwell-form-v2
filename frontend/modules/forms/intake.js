@@ -36,7 +36,7 @@ export function internalPanel() {
     '<details id="company-fields" class="profile-section" hidden><summary>企业信息</summary>'+
     '<p class="hint">本次测试只查询虚构样例。选含工商栏的测试套餐，可将核对结果写入 Word。</p>'+
     '<div class="field-grid">'+entry('insured','实际参保人数（仅供参考）')+Object.entries(companyTitles).map(([key,label])=>companyEntry(key,label)).join('')+
-    '</div><p class="hint">企业规模默认为 31–80 人，计算机数量默认为 16–40 台；可按实际情况修改。</p></details>';
+    '</div></details>';
 }
 
 export function bindIntake(form, defaults) {
@@ -65,8 +65,9 @@ export function bindIntake(form, defaults) {
     at('voice-fields').hidden=!(businessVoice || voiceKeys.some(key=>extras.includes(key)));
     const companyKeys=Object.keys(companyTitles);
     const showCompany=enabled();
-    for(const key of companyKeys) control(key).closest('label').hidden=!(showCompany || extras.includes(key));
-    control('insured').closest('label').hidden=!showCompany;
+    for(const key of companyKeys) control(key).closest('label').hidden=
+      ['extra_company_size','extra_computer_count'].includes(key) || !(showCompany || extras.includes(key));
+    control('insured').closest('label').hidden=true;
     at('company-fields').hidden=at('company-lookup').hidden=!(showCompany || companyKeys.some(key=>extras.includes(key)));
   }
   function updateFollowup() {
