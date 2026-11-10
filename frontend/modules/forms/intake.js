@@ -25,14 +25,18 @@ export function intakePanel() {
     '<div id="followup-block" hidden>'+box('followup-text','发给客户的补充话术',4)+copy('followup-text','复制缺项追问')+'</div>'+
     '<p id="copy-feedback" aria-live="polite"></p></section>';
 }
+export function lookupPanel() {
+  return '<section id="company-lookup" hidden>'+
+    '<button type="button" id="lookup-fixture">企查查查询企业信息</button> ' +
+    '<span class="hint">当前仅支持虚构样例，企查查接口暂未接入。</span><p id="lookup-status" aria-live="polite"></p></section>';
+}
 export function internalPanel() {
-  return '<section id="voice-fields" hidden><h3>语音实名资料</h3><div class="field-grid">'+
-    voiceKeys.map(k=>entry(k,titles[k])).join('')+'</div></section>'+
-    '<section id="company-fields" hidden><div class="divider"></div><h3>工作人员核对企业信息</h3>'+
+  return '<details id="voice-fields" class="profile-section" hidden><summary>语音实名资料</summary><div class="field-grid">'+
+    voiceKeys.map(k=>entry(k,titles[k])).join('')+'</div></details>'+
+    '<details id="company-fields" class="profile-section" hidden><summary>企业信息</summary>'+
     '<p class="hint">本次测试只查询虚构样例。选含工商栏的测试套餐，可将核对结果写入 Word。</p>'+
-    '<button type="button" id="lookup-fixture">按企业全称补全</button><p id="lookup-status" aria-live="polite"></p>'+
     '<div class="field-grid">'+entry('insured','实际参保人数（仅供参考）')+Object.entries(companyTitles).map(([key,label])=>companyEntry(key,label)).join('')+
-    '</div><p class="hint">企业规模默认为 31–80 人，计算机数量默认为 16–40 台；可按实际情况修改。</p></section>';
+    '</div><p class="hint">企业规模默认为 31–80 人，计算机数量默认为 16–40 台；可按实际情况修改。</p></details>';
 }
 
 export function bindIntake(form, defaults) {
@@ -44,6 +48,12 @@ export function bindIntake(form, defaults) {
   const neededKeys=()=>requiredKeys(voice(),control('payment_method').value).filter(key=>key!=='tariff');
   let context='', checked=false, pending=false, activeCompany='', extras=[], conflicts=new Map(), missing=[];
   const put=(key,value)=>{ control(key).value=value; };
+  function attentionKeys() {
+    if (!enabled()) return [];
+    return neededKeys().filter(key=>conflicts.has(key) ||
+      !(key==='billing_address' && defaults.sameBilling() && !control('install_address').value.trim()) &&
+      !validValue(key,control(key).value.trim()));
+  }
   function updateRequired() {
     for (const key of intakeExtraKeys) control(key).required=extras.includes(key);
     const businessVoice=enabled() && voice();
@@ -57,7 +67,7 @@ export function bindIntake(form, defaults) {
     const showCompany=enabled();
     for(const key of companyKeys) control(key).closest('label').hidden=!(showCompany || extras.includes(key));
     control('insured').closest('label').hidden=!showCompany;
-    at('company-fields').hidden=!(showCompany || companyKeys.some(key=>extras.includes(key)));
+    at('company-fields').hidden=at('company-lookup').hidden=!(showCompany || companyKeys.some(key=>extras.includes(key)));
   }
   function updateFollowup() {
     if(!checked || !enabled()) return;
@@ -157,10 +167,12 @@ export function bindIntake(form, defaults) {
   setContext();
   return {
     setExtras(keys) {extras=keys;updateRequired();},
+    attentionKeys,
     beforeGenerate() {
       if(!enabled())return '';
       if(pending)return '请先识别这次粘贴的回复，或清空回复框。';
       if(neededKeys().some(key=>conflicts.has(key)))return '请先处理客户回复中的冲突。';
+      if(voice() && attentionKeys().some(key=>key.startsWith('extra_')))return '请先补充本次业务所需的语音实名资料。';
       return '';
     }
   };
