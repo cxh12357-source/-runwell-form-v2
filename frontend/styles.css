@@ -16,7 +16,10 @@
 [data-delete-confirm] { color: #9b2525; }
 
 .application-fields { min-width: 0; }
-#billing-address-field[hidden], #extra > label[hidden] { display: none; }
+#billing-address-field[hidden], #extra > label[hidden], #default-fields > label[hidden], #missing-default-fields > label[hidden], #missing-defaults[hidden], #default-settings[hidden] { display: none; }
+#extra:empty { display: none; }
+#default-settings { margin-top: 24px; }
+#default-settings summary { color: #214f86; cursor: pointer; font-size: 14px; }
 #review-billing[hidden] { display: none; }
 #review-billing input { width: auto; height: auto; justify-self: start; }
 

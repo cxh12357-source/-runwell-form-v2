@@ -7,6 +7,9 @@ import { bindIntake, intakePanel, internalPanel, intakeExtraKeys } from './intak
 import { bindDefaults } from './defaults.js';
 
 const customerFields = ['company_name','install_address','billing_address','contact_name','phone','id_number','email'];
+const defaultFieldKeys = new Set(['install_zip','billing_zip','job_title','fax','security_name',
+  'security_role','security_phone','service_use','application_date']);
+const linkedSecurityFields = new Set(['security_name','security_role','security_phone']);
 function field(name, title, type = 'text') {
   return '<label>' + esc(title) + '<input name="' + esc(name) + '" type="' + type + '" required maxlength="500" autocomplete="off"></label>';
 }
@@ -35,13 +38,17 @@ export function generation(labels) {
     customerFields.map(key => {
       if (key === 'billing_address') return '<label>账单地址方式<select name="billing_address_mode"><option value="same">与安装地址相同</option><option value="different">不同，单独填写</option></select></label>' +
         '<label id="billing-address-field" hidden>* 账单地址<input name="billing_address" required maxlength="500" autocomplete="off"></label>';
-      const input = field(key, '* ' + (key === 'id_number' ? '身份证号码' : key === 'email' ? 'E-MAIL' : labels[key]), key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text');
-      return key === 'contact_name' ? input + '<label>申请人职务<input name="applicant_role" maxlength="200" autocomplete="off"></label>' : input;
+      return field(key, '* ' + (key === 'id_number' ? '身份证号码' : key === 'email' ? 'E-MAIL' : labels[key]), key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text');
     }).join('') +
     '<label>* 付款方式<select name="payment_method" required><option value="">请选择</option><option value="cash">现金</option><option value="collection">托收</option></select></label></div>' +
-    '<p class="hint">申请人职务会默认用于经办人和信息安全责任人；姓名与电话默认使用经办人信息，可分别修改。地址未注明邮编时请手动填写。</p>' +
+    '<p class="hint">账单地址默认与安装地址相同。</p>' +
     '<fieldset hidden id="bank-fields" disabled><div class="field-grid">' + field('bank_account', labels.bank_account) +
-    field('bank_name', labels.bank_name) + '</div></fieldset>' + internalPanel() + '</fieldset><div id="extra" class="field-grid"></div>');
+    field('bank_name', labels.bank_name) + '</div></fieldset>' + internalPanel() + '</fieldset><div id="extra" class="field-grid"></div>' +
+    '<section id="missing-defaults" hidden><h3>需要补充的信息</h3><p class="hint">未能自动填写的模板资料，请补充后生成。</p>' +
+    '<div id="missing-default-fields" class="field-grid"></div></section>' +
+    '<details id="default-settings" hidden><summary>修改默认信息</summary>' +
+    '<p class="hint">姓名和联系方式默认与经办人相同；职务默认使用申请人职务。账单邮编在地址相同时复用安装邮编。</p>' +
+    '<div id="default-fields" class="field-grid"><label id="applicant-role-field">申请人职务<input name="applicant_role" maxlength="200" autocomplete="off"></label></div></details>');
 }
 
 export function bindGeneration(root, state) {
@@ -52,6 +59,12 @@ export function bindGeneration(root, state) {
   defaults.sync();
   const result = root.querySelector('#match-result');
   const extra = root.querySelector('#extra');
+  const missingDefaults = root.querySelector('#missing-defaults');
+  const missingFields = root.querySelector('#missing-default-fields');
+  const defaultSettings = root.querySelector('#default-settings');
+  const defaultFields = root.querySelector('#default-fields');
+  const applicantRole = form.elements.namedItem('applicant_role');
+  const applicantRoleLabel = root.querySelector('#applicant-role-field');
   const generate = root.querySelector('#generate');
   const generated = root.querySelector('#generated');
   const hint = root.querySelector('#generate-hint');
@@ -61,6 +74,36 @@ export function bindGeneration(root, state) {
     discount_factor:'折数及折后资费',line_count:'线路数量',service_options:'业务选项',signature:'签字盖章',guarantee_signature:'签字盖章',
     guarantee_number:'电信业务号码',guarantee_date:'担保日期'};
   let epoch = 0, candidates = [], template = null, matchToken, requestId, busy = false;
+
+  function updateDefaultFields() {
+    const securityRole = form.elements.namedItem('security_role');
+    const hasRole = Boolean(securityRole || form.elements.namedItem('job_title'));
+    applicantRoleLabel.hidden = !hasRole;
+    applicantRole.required = Boolean(securityRole?.dataset.templateRequired === 'true' && defaults.isLinked('security_role'));
+    applicantRole.setCustomValidity(applicantRole.required && !applicantRole.value.trim() ? '请填写申请人职务。' : '');
+
+    const fields = [applicantRoleLabel, ...form.querySelectorAll('[data-default-field]')];
+    for (const label of fields) {
+      const input = label.querySelector('input');
+      const key = input.name;
+      if (key !== 'applicant_role') {
+        const linked = linkedSecurityFields.has(key) && defaults.isLinked(key);
+        input.required = input.dataset.templateRequired === 'true' && !linked;
+        const blank = input.required && !input.value.trim();
+        input.setCustomValidity(blank ? '请填写' + label.dataset.label + '。' : '');
+      }
+      const needsInput = !label.hidden && !input.disabled && input.required && !input.checkValidity();
+      const destination = needsInput ? missingFields : defaultFields;
+      // Do not move an input while someone is typing; reposition it on blur.
+      if (label.parentElement !== destination && form.ownerDocument.activeElement !== input) destination.append(label);
+    }
+    missingDefaults.hidden = ![...missingFields.children].some(label => !label.hidden);
+    defaultSettings.hidden = !form.querySelector('[data-default-field]');
+  }
+
+  form.addEventListener('input', updateDefaultFields);
+  form.addEventListener('change', updateDefaultFields);
+  form.addEventListener('focusout', () => queueMicrotask(updateDefaultFields));
   root.querySelector('#fill-example').onclick = () => {
     const fixture = { company_name:'虚构测试企业', install_address:'虚构安装路一号',
       contact_name:'测试甲乙', applicant_role:'经理', phone:'10000000000', id_number:'000000000000000000', email:'a@b.invalid' };
@@ -87,10 +130,15 @@ export function bindGeneration(root, state) {
     const reviewed=template?.reviewed_controls;
     application.hidden=application.disabled=Boolean(reviewed?.blank);
     const custom=reviewed || template?.carrier_controls;
+    for (const label of form.querySelectorAll('[data-default-field]')) label.remove();
     extra.innerHTML = custom ? custom.groups.filter(g=>g.key!=='choice_billing').map(g=>'<label>'+esc(g.label)+'<select name="'+esc(g.key)+'" '+(g.required?'required':'')+'>'+options(g.options.map((name,id)=>({name,id})),g.required?'请选择':'不订购')+'</select></label>').join('')+
-      custom.inputs.filter(([key])=>!intakeExtraKeys.includes(key)).map(([key,label,required,type])=>'<label>'+esc(label)+'<input type="'+(['date','email'].includes(type)?type:'text')+'" name="'+esc(key)+'" '+(required?'required':'')+' maxlength="500" autocomplete="off"></label>').join('') :
+      custom.inputs.filter(([key])=>!intakeExtraKeys.includes(key) && !defaultFieldKeys.has(key)).map(([key,label,required,type])=>'<label>'+esc(label)+'<input type="'+(['date','email'].includes(type)?type:'text')+'" name="'+esc(key)+'" '+(required?'required':'')+' maxlength="500" autocomplete="off"></label>').join('') :
       keys.filter(k => !intakeExtraKeys.includes(k)).map(k => field(k, '模板必填 · ' + k.slice(6))).join('');
+    if (custom) defaultFields.insertAdjacentHTML('beforeend', custom.inputs.filter(([key])=>defaultFieldKeys.has(key)).map(([key,label,required,type])=>
+      '<label data-default-field data-label="'+esc(label)+'">'+esc(label)+'<input type="'+(['date','email'].includes(type)?type:'text')+'" name="'+esc(key)+'" data-template-required="'+Boolean(required)+'" '+
+      (key.endsWith('_zip')?'inputmode="numeric" pattern="[0-9]{6}" title="请输入6位数字邮编" maxlength="6"':'maxlength="500"')+' autocomplete="off"></label>').join(''));
     defaults.templateChanged();
+    updateDefaultFields();
     generate.disabled = busy || !template;
     hint.hidden=Boolean(template);
     requestId = undefined;
