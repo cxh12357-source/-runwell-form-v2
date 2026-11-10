@@ -5,6 +5,8 @@ import { classifyTariff, businessFields, businessSelectors, bindBusinessSelectio
 import { businessText } from './intake-rules.js';
 import { bindIntake, intakePanel, internalPanel, intakeExtraKeys } from './intake.js';
 import { bindDefaults } from './defaults.js';
+import { bindPackageOptions } from './package-options.js';
+import { renderAiOptions, bindAiOptions } from './ai-options.js';
 
 const customerFields = ['company_name','install_address','billing_address','contact_name','phone','id_number','email'];
 const defaultFieldKeys = new Set(['install_zip','billing_zip','job_title','fax','security_name',
@@ -15,12 +17,13 @@ function field(name, title, type = 'text') {
 }
 export function generationShell(content) {
   return '<form id="generate-form">' + businessSelectors() +
-    '<button class="button" type="button" id="match">匹配模板</button><div id="match-result"></div>' + content +
+    '<button class="button" type="button" id="match">匹配模板</button><div id="match-result"></div><div id="ai-options"></div>' + content +
     '<p id="generate-hint" class="hint">请先在上方选好业务和所需条件，再匹配一份已启用的模板。</p><button id="generate" class="button" aria-describedby="generate-hint" disabled>确认生成 Word</button></form><div id="generated"></div>';
 }
 
-export function generatedMaterials(tariff) {
+export function generatedMaterials(tariff, voiceTemplateReview = false) {
   if(tariff?.business_id!=='business-line' || tariff.business_attribute!=='new')return '';
+  if(voiceTemplateReview)return '<p class="hint">已选择语音或移动业务，当前是不带语音模板。请人工核对适用模板、授权书、带语音实名资料及手续材料后再提供给客户。</p>';
   const {blank,voice}=classifyTariff(tariff);
   if(blank)return '';
   if(voice==='unknown' || typeof tariff.voice_required!=='boolean')
@@ -44,21 +47,24 @@ export function generation(labels) {
     '<p class="hint">账单地址默认与安装地址相同。</p>' +
     '<fieldset hidden id="bank-fields" disabled><div class="field-grid">' + field('bank_account', labels.bank_account) +
     field('bank_name', labels.bank_name) + '</div></fieldset>' + internalPanel() + '</fieldset><div id="extra" class="field-grid"></div>' +
+    '<section id="package-options" hidden></section>' +
     '<section id="missing-defaults" hidden><h3>需要补充的信息</h3><p class="hint">未能自动填写的模板资料，请补充后生成。</p>' +
     '<div id="missing-default-fields" class="field-grid"></div></section>' +
     '<details id="default-settings" hidden><summary>修改默认信息</summary>' +
-    '<p class="hint">姓名和联系方式默认与经办人相同；职务默认使用申请人职务。账单邮编在地址相同时复用安装邮编。</p>' +
-    '<div id="default-fields" class="field-grid"><label id="applicant-role-field">申请人职务<input name="applicant_role" maxlength="200" autocomplete="off"></label></div></details>');
+    '<p class="hint">姓名和联系方式默认与经办人相同；申请人职务默认为 IT，可修改，经办人和信息安全责任人的职务默认与之相同。账单邮编在地址相同时复用安装邮编。</p>' +
+    '<div id="default-fields" class="field-grid"><label id="applicant-role-field">申请人职务<input name="applicant_role" value="IT" maxlength="200" autocomplete="off"></label></div></details>');
 }
 
 export function bindGeneration(root, state) {
   const form = root.querySelector('#generate-form');
   const selected = bindBusinessSelection(form, state);
   const defaults = bindDefaults(form);
+  const packageOptions = bindPackageOptions(form);
   const intake = bindIntake(form, defaults);
   defaults.sync();
   const result = root.querySelector('#match-result');
   const extra = root.querySelector('#extra');
+  const aiOptions = root.querySelector('#ai-options');
   const missingDefaults = root.querySelector('#missing-defaults');
   const missingFields = root.querySelector('#missing-default-fields');
   const defaultSettings = root.querySelector('#default-settings');
@@ -70,8 +76,8 @@ export function bindGeneration(root, state) {
   const hint = root.querySelector('#generate-hint');
   const bank = root.querySelector('#bank-fields');
   const application = form.querySelector('#application-fields');
-  const reviewLabels={billing_address:'其他账单地址',bank_name:'开户银行',authorization:'授权委托书',voice_identity:'语音实名资料（如适用）',
-    discount_factor:'折数及折后资费',line_count:'线路数量',service_options:'业务选项',signature:'签字盖章',guarantee_signature:'签字盖章',
+  const reviewLabels={billing_address:'其他账单地址',bank_name:'开户银行',authorization:'授权委托书',voice_identity:'语音实名资料（如适用）',voice_template:'已选择语音或移动业务，请核对是否需要带语音模板和手续材料',
+    discount_factor:'折数及折后资费',line_count:'线路数量',service_options:'业务选项',delegate_information:'委托代办信息（如适用）',signature:'签字盖章',guarantee_signature:'签字盖章',
     guarantee_number:'电信业务号码',guarantee_date:'担保日期'};
   let epoch = 0, candidates = [], template = null, matchToken, requestId, busy = false;
 
@@ -101,12 +107,26 @@ export function bindGeneration(root, state) {
     defaultSettings.hidden = !form.querySelector('[data-default-field]');
   }
 
+  function syncCompanyChoices() {
+    const normalize = value => value.replace(/\s/g,'').replace(/[–—−]/g,'-');
+    for (const [groupName,sourceName] of [['choice_size','extra_company_size'],['choice_computers','extra_computer_count']]) {
+      const group = form.elements.namedItem(groupName);
+      if (!group) continue;
+      const source = form.elements.namedItem(sourceName);
+      const matches = [...group.options].filter(option => option.value && normalize(option.textContent) === normalize(source.value));
+      group.value = matches.length===1 ? matches[0].value : '';
+      group.closest('label').hidden = matches.length===1;
+    }
+  }
+
   form.addEventListener('input', updateDefaultFields);
   form.addEventListener('change', updateDefaultFields);
+  form.addEventListener('input', event => { if (['extra_company_size','extra_computer_count'].includes(event.target.name)) syncCompanyChoices(); });
+  form.addEventListener('change', event => { if (['extra_company_size','extra_computer_count'].includes(event.target.name)) syncCompanyChoices(); });
   form.addEventListener('focusout', () => queueMicrotask(updateDefaultFields));
   root.querySelector('#fill-example').onclick = () => {
     const fixture = { company_name:'虚构测试企业', install_address:'虚构安装路一号',
-      contact_name:'测试甲乙', applicant_role:'经理', phone:'10000000000', id_number:'000000000000000000', email:'a@b.invalid' };
+      contact_name:'测试甲乙', applicant_role:'IT', phone:'10000000000', id_number:'000000000000000000', email:'a@b.invalid' };
     for (const [key, value] of Object.entries(fixture)) {
       if (!form.elements[key].value) {
         form.elements[key].value = value;
@@ -128,8 +148,11 @@ export function bindGeneration(root, state) {
     const keys = template?.extra_fields ?? [];
     intake.setExtras(keys);
     const reviewed=template?.reviewed_controls;
+    aiOptions.innerHTML=renderAiOptions(reviewed?.ai_options);
+    bindAiOptions(form);
     application.hidden=application.disabled=Boolean(reviewed?.blank);
     const custom=reviewed || template?.carrier_controls;
+    packageOptions.choose(reviewed?.package_options);
     for (const label of form.querySelectorAll('[data-default-field]')) label.remove();
     extra.innerHTML = custom ? custom.groups.filter(g=>g.key!=='choice_billing').map(g=>'<label>'+esc(g.label)+'<select name="'+esc(g.key)+'" '+(g.required?'required':'')+'>'+options(g.options.map((name,id)=>({name,id})),g.required?'请选择':'不订购')+'</select></label>').join('')+
       custom.inputs.filter(([key])=>!intakeExtraKeys.includes(key) && !defaultFieldKeys.has(key)).map(([key,label,required,type])=>'<label>'+esc(label)+'<input type="'+(['date','email'].includes(type)?type:'text')+'" name="'+esc(key)+'" '+(required?'required':'')+' maxlength="500" autocomplete="off"></label>').join('') :
@@ -137,7 +160,13 @@ export function bindGeneration(root, state) {
     if (custom) defaultFields.insertAdjacentHTML('beforeend', custom.inputs.filter(([key])=>defaultFieldKeys.has(key)).map(([key,label,required,type])=>
       '<label data-default-field data-label="'+esc(label)+'">'+esc(label)+'<input type="'+(['date','email'].includes(type)?type:'text')+'" name="'+esc(key)+'" data-template-required="'+Boolean(required)+'" '+
       (key.endsWith('_zip')?'inputmode="numeric" pattern="[0-9]{6}" title="请输入6位数字邮编" maxlength="6"':'maxlength="500"')+' autocomplete="off"></label>').join(''));
+    if (custom) for (const group of custom.groups) {
+      const control=form.elements.namedItem(group.key);
+      const value=String(group.default ?? '');
+      if (control && value && [...control.options].some(option=>option.value===value)) control.value=value;
+    }
     defaults.templateChanged();
+    syncCompanyChoices();
     updateDefaultFields();
     generate.disabled = busy || !template;
     hint.hidden=Boolean(template);
@@ -208,7 +237,7 @@ export function bindGeneration(root, state) {
       const row = await request('/generate', { method: 'POST', data: { request_id: requestId, match_token: matchToken, template_id: template.id, selection: selected(), customer } });
       status(root, '生成成功，文件已保存到此账号的历史记录。');
       generated.innerHTML = (row.review?.length ? '<p>下载后请核对版式，并处理：'+esc(row.review.map(key=>reviewLabels[key]||key).join('、'))+'。</p>' : '')+
-        downloadControl('/records/' + row.id + '/file', '下载已生成的 Word', state.hosted) + generatedMaterials(row.tariff);
+        downloadControl('/records/' + row.id + '/file', '下载已生成的 Word', state.hosted) + generatedMaterials(row.tariff,row.review?.includes('voice_template'));
       const copyMaterials=generated.querySelector('#copy-generated-materials');
       if(copyMaterials)copyMaterials.onclick=()=>copyTextArea(generated.querySelector('#generated-material-text'),generated.querySelector('#generated-material-feedback'));
     } catch (error) {

@@ -269,8 +269,9 @@ const octoberGroups = groups.map(group=>{
   return group;
 });
 export function controls(profileId) {
+  const defaults={size:'2',computers:'2',line:'0'};
   return {inputs,groups:([octoberProfile,discountProfile].includes(profileId)?octoberGroups:groups).map(([key,label,required,items])=>
-    ({key:'choice_'+key,label,required,options:items.map(x=>x[2])}))};
+    ({key:'choice_'+key,label,required,options:items.map(x=>x[2]),...(Object.hasOwn(defaults,key)?{default:defaults[key]}:{})}))};
 }
 
 function profileDocument(files, xmlRuntime) {

@@ -12,9 +12,12 @@ function estimatedWidth(value) {
   }
   return width;
 }
-export function estimateBusiness3Layout(values) {
+export function estimateBusiness3Layout(values, {wideIdentity=false}={}) {
   const fits={};
-  for(const [key,available] of Object.entries(AVAILABLE)) {
+  // The expanded output rows reserve 1050 twips for the name/role and at
+  // least 2132 twips for ID/email. Continue to use conservative margins.
+  const availableFields=wideIdentity?{...AVAILABLE,contact_name:834,id_number:1916,email:1875,phone:1185}:AVAILABLE;
+  for(const [key,available] of Object.entries(availableFields)) {
     const value=values[key];
     if(typeof value!=='string' || !value) throw new Error('请核对必填资料。');
     const width=estimatedWidth(value);

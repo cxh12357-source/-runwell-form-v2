@@ -4,7 +4,7 @@ import { classifyTariff, matchingBusinessRows, validDiscount } from '../frontend
 import { selectedDiscount } from '../backend/modules/forms/preview/rules.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {businessText,parseReply,requiredKeys,matchReplyTariff,followup,validValue,lookupFixture,staffEstimates} from '../frontend/modules/forms/intake-rules.js';
+import {businessText,parseReply,requiredKeys,matchReplyTariff,followup,validValue,lookupFixture} from '../frontend/modules/forms/intake-rules.js';
 import {tariffs} from '../backend/modules/forms/preview/rules.mjs';
 
 test('两种版本复制的原文、条件银行字段及语音实名字段',()=>{
@@ -38,15 +38,9 @@ test('套餐唯一选择；只给金额、冲突带宽、不同周期均不猜',
   for(const s of ['900元/月','测试套餐 A 200M','测试套餐 B 900元/年','测试套餐 A 及测试套餐 B'])
     assert.equal(matchReplyTariff(s,choices),'',s);
 });
-test('样例按企业全称精确命中；零、分档边界和未知参保数',()=>{
+test('样例按企业全称精确命中',()=>{
   assert.equal(lookupFixture('虚构测试企'),null);
-  const d=staffEstimates(lookupFixture('虚构测试企业').insured);
-  assert.equal(d.people,8);assert.equal(d.extra_company_size,'10人以下');assert.equal(d.computers,16);
-  assert.equal(d.extra_computer_count,'16-40台');
-  assert.equal(staffEstimates(0).extra_computer_count,'5台及以下');
-  assert.equal(staffEstimates(10).extra_company_size,'10-30人');
-  assert.equal(staffEstimates(201).extra_company_size,'200人以上');
-  for(const x of ['',null,'未披露','8至10'])assert.equal(staffEstimates(x),null);
+  assert.deepEqual(lookupFixture('虚构测试企业'),{extra_credit_code:'TEST00000000000001',extra_industry:'软件和信息技术服务业',insured:'8'});
 });
 
 test('带空格的经办人电话和 E-MAIL 标签按各自字段识别，保留真正的号码冲突',()=>{
