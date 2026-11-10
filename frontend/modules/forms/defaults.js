@@ -12,8 +12,7 @@ export function bindDefaults(form) {
   const control = key => form.elements.namedItem(key);
   const linked = new Map();
   const pairs = [
-    ['security_name', 'contact_name'], ['security_phone', 'phone'],
-    ['security_role', 'applicant_role'], ['job_title', 'applicant_role']
+    ['security_name', 'contact_name'], ['security_phone', 'phone']
   ];
   let installZipLinked = true, otherZipLinked = true;
   let otherAddress = '', otherZip = '';
@@ -92,9 +91,9 @@ export function bindDefaults(form) {
       installZipLinked = true;
       otherZipLinked = true;
       const use = control('service_use');
-      const date = control('application_date');
-      if (use && !use.value) use.value = '办公';
-      if (date && !date.value) date.value = todayInShanghai();
+      const securityRole = control('security_role');
+      if (use && !use.value) use.value = '办公上网';
+      if (securityRole && !securityRole.value) securityRole.value = 'IT';
       sync();
     }
   };
