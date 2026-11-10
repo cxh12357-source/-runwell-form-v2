@@ -93,7 +93,7 @@ export function bindDefaults(form) {
       otherZipLinked = true;
       const use = control('service_use');
       const date = control('application_date');
-      if (use && !use.value) use.value = '公办';
+      if (use && !use.value) use.value = '办公';
       if (date && !date.value) date.value = todayInShanghai();
       sync();
     }
