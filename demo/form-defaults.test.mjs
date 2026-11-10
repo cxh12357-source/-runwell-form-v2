@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { JSDOM } from 'jsdom';
+import { readFileSync } from 'node:fs';
 import { unzipSync, strFromU8 } from 'fflate';
 import documents from './default-docx.json' with {type:'json'};
 import { identifyReviewed } from './reviewed/render.mjs';
@@ -10,7 +11,8 @@ import { bindDefaults, explicitPostcode, todayInShanghai } from '../frontend/mod
 import { labels } from '../backend/modules/forms/preview/rules.mjs';
 
 function page() {
-  const dom = new JSDOM('<div id="root">' + generation(labels) + '<div role="status"></div></div>');
+  const styles=readFileSync(new URL('../frontend/styles.css',import.meta.url),'utf8');
+  const dom = new JSDOM('<style>'+styles+'</style><div id="root">' + generation(labels) + '<div role="status"></div></div>');
   const root = dom.window.document.querySelector('#root');
   const form = root.querySelector('form');
   const input = (name, value, event='input') => {
@@ -22,7 +24,7 @@ function page() {
 }
 
 test('自动填写跟随来源，分别手动修改后不被覆盖；地址与邮编切换安全', () => {
-  const {form,input}=page();
+  const {dom,form,input}=page();
   const extra=form.querySelector('#extra');
   extra.innerHTML=['install_zip','billing_zip','job_title','security_name','security_role','security_phone','service_use','application_date']
     .map(name=>'<label><input name="'+name+'"></label>').join('');
@@ -43,9 +45,13 @@ test('自动填写跟随来源，分别手动修改后不被覆盖；地址与�
   input('install_address','测试路1号 邮编：200001');
   assert.equal(form.elements.billing_address.value,'测试路1号 邮编：200001');
   assert.equal(form.elements.billing_address.disabled,true);
+  assert.equal(dom.window.getComputedStyle(form.querySelector('#billing-address-field')).display,'none');
+  assert.equal(dom.window.getComputedStyle(form.elements.billing_zip.closest('label')).display,'none');
   assert.equal(form.elements.install_zip.value,'200001');
   assert.equal(form.elements.billing_zip.value,'200001');
   input('billing_address_mode','different','change');
+  assert.notEqual(dom.window.getComputedStyle(form.querySelector('#billing-address-field')).display,'none');
+  assert.notEqual(dom.window.getComputedStyle(form.elements.billing_zip.closest('label')).display,'none');
   assert.equal(form.elements.billing_address.value,'');
   assert.equal(form.elements.billing_zip.value,'');
   input('billing_address','测试路2号 邮编：200002');
