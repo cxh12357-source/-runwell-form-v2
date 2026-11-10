@@ -167,7 +167,7 @@ const groups = [
   ['ext','商企全光网免费从设备',false,[[49,0,'订购 1 线']]], ['paid','商企全光网收费从设备',false,[[71,0,'订购收费从设备']]],
   ['speed','上行升速包',false,[[74,0,'200M 月付'],[74,1,'200M 年付'],[75,0,'300M 月付'],[75,1,'300M 年付'],[76,0,'500M 月付'],[76,1,'500M 年付']]]
 ];
-const inputs = [['extra_credit_code','统一社会信用代码',true],['extra_industry','企业所属行业',true],['install_zip','安装邮编',true],['billing_zip','账单邮编',true],
+const inputs = [['extra_credit_code','统一社会信用代码',true],['extra_industry','企业所属行业',true],['install_zip','安装邮编',false],['billing_zip','账单邮编',true],
   ['job_title','经办人职务'],['fax','传真'],['existing_line','在用宽带号码（选择在用宽带时必填）'],['paid_count','收费从设备数量（订购时必填）'],
   ['security_name','信息安全责任人姓名',true],['security_role','信息安全责任人职务',true],['security_phone','信息安全责任人联系电话',true],
   ['service_use','业务用途',true],['application_date','申请日期',false,'date'],['delegate_company','代办单位'],['delegate_credit_code','代办单位信用代码'],['delegate_name','代办员工'],['delegate_id','代办员工身份证号']];
@@ -455,8 +455,8 @@ export function renderCarrier(bytes, customer, rate, xmlRuntime=browserXml) {
   const values = {};
   for (const [key,label,required] of inputs) {
     const v=value(key);
-    requireThat(!required || v,'请填写'+label+'。');
-    if (key.endsWith('_zip')) requireThat(/^\d{6}$/.test(v),'请填写 6 位'+label+'。');
+    requireThat(!required || v || key==='billing_zip','请填写'+label+'。');
+    if (key.endsWith('_zip') && v) requireThat(/^\d{6}$/.test(v),'请填写 6 位'+label+'。');
     values[key]=v;
   }
   requireThat(value('choice_line')!=='1' || values.existing_line,'请填写在用宽带号码。');
