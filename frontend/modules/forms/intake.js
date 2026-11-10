@@ -28,7 +28,7 @@ export function internalPanel() {
     '</div><p id="estimate" class="hint"></p></section>';
 }
 
-export function bindIntake(form) {
+export function bindIntake(form, defaults) {
   const at=id=>form.querySelector('#'+id);
   const control=key=>form.elements.namedItem(key);
   const voice=()=>control('voice').value==='yes';
@@ -44,7 +44,7 @@ export function bindIntake(form) {
   function updateFollowup() {
     if(!checked || !enabled()) return;
     const needed=neededKeys();
-    missing=needed.filter(key=>!conflicts.has(key) && !validValue(key,control(key).value.trim()));
+    missing=needed.filter(key=>!conflicts.has(key) && !(key==='billing_address' && defaults.sameBilling() && !control('install_address').value.trim()) && !validValue(key,control(key).value.trim()));
     const review=needed.filter(key=>conflicts.has(key));
     at('followup-block').hidden=!missing.length;
     at('followup-text').value=followup(missing);
@@ -95,14 +95,27 @@ export function bindIntake(form) {
     if(!at('reply-text').value.trim()){at('read-summary').textContent='请先粘贴客户回复。';return;}
     const parsed=parseReply(at('reply-text').value);
     for(const key of ['payment_method',...Object.keys(parsed).filter(k=>k!=='payment_method')]){
-      if(!parsed[key] || !neededKeys().includes(key)) continue;
+      if(!parsed[key] || !(neededKeys().includes(key) || key==='billing_address')) continue;
       const values=parsed[key];
+      if (key==='billing_address' && values.length===1) {
+        if (/^(?:同|与)(?:安装|装机)地址(?:相同|一致)?$/.test(values[0])) {
+          if (!defaults.sameBilling()) conflicts.set(key,true);
+          else conflicts.delete(key);
+          continue;
+        }
+        if (defaults.sameBilling() && values[0]!==control('install_address').value.trim() && validValue(key,values[0])) {
+          defaults.setBillingFromReply(values[0]);
+          conflicts.delete(key);
+          continue;
+        }
+      }
       const current=control(key).value.trim();
       if (values.length===1 && !validValue(key,values[0]) && !current) {conflicts.delete(key);continue;}
       if(values.length!==1 || !validValue(key,values[0]) || (current && values[0]!==current)) {conflicts.set(key,true);continue;}
       conflicts.delete(key);
       if(current) continue;
       put(key,values[0]);
+      control(key).dispatchEvent(new Event('input',{bubbles:true}));
       if(key==='payment_method') control(key).dispatchEvent(new Event('change',{bubbles:true}));
     }
     syncCompany(true); checked=true;pending=false;

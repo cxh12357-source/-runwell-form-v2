@@ -53,10 +53,10 @@ export async function generateReviewed(tariff,bytes,customer) {
   }
   for(const key of ['company_name','install_address','contact_name','phone','id_number','email','payment_method']) values[key]=clean(customer[key]);
   if(!['0','1'].includes(customer.choice_billing))throw new Error('请选择账单地址方式。');
-  values.billing_mode=customer.choice_billing==='0'?'same_company':'other_manual';
-  if(values.billing_mode==='other_manual'){
-    if(!clean(customer.billing_address)||customer.manual_billing_ack!=='on')throw new Error('请填写其他账单地址，并确认下载后手工填入 Word。');
-    values.manual_billing_ack=true;
+  values.billing_mode=customer.choice_billing==='0'?'same_company':'other_address';
+  if(values.billing_mode==='other_address'){
+    values.billing_address=clean(customer.billing_address);
+    if(!values.billing_address)throw new Error('请填写账单地址。');
   }
   if(values.payment_method==='collection'){
     if(!clean(customer.bank_name))throw new Error('请填写开户银行。');

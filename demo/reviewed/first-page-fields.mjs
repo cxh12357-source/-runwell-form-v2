@@ -29,13 +29,16 @@ export function materializeFirstPageBoxes(bytes, values, spec, {sax,unzipSync,zi
   const paragraphs=readParagraphs(xml,sax);
   const options=[
     [spec.billing_same.paragraph,/^同公司地址$/,values.billing_mode==='same_company'],
-    [spec.billing_same.paragraph+1,/^(?:其它|其他)[:：]?$/,values.billing_mode==='other_manual'],
+    [spec.billing_same.paragraph+1,values.billing_mode==='other_address'
+      ? text=>{const prefix=text.match(/^(?:其它|其他)[:：]?/); return Boolean(prefix) && text.slice(prefix[0].length)===values.billing_address.replace(/\s/g,'');}
+      : text=>/^(?:其它|其他)[:：]?$/.test(text),['other_manual','other_address'].includes(values.billing_mode)],
     [spec.collection.paragraph,/^托收银行账号[:：]\d*$/,values.payment_method==='collection'],
     [spec.cash.paragraph,/^现金$/,values.payment_method==='cash']
   ];
   for(const [index,label,selected] of options.sort((a,b)=>b[0]-a[0])){
     const p=paragraphs[index], original=p?.texts.join('').replace(/\s/g,'')||'';
-    if(!p || !label.test(original.replace(/^□/,'')))throw new Error('账单地址或付款方式的位置不符。');
+    const content=original.replace(/^□/,'');
+    if(!p || !(typeof label==='function'?label(content):label.test(content)))throw new Error('账单地址或付款方式的位置不符。');
     const mark=selected?'■':'□';
     let raw;
     if(original.startsWith('□')){
@@ -67,6 +70,14 @@ export function buildFirstPageEdits(xml, values, spec, {sax}) {
     const {paragraph,text}=spec.collection, expected=paragraphs[paragraph]?.texts[text];
     if(!/^托\s*收\s*银行账号[：:]\s*$/.test(expected||''))throw new Error('托收账号位置不符。');
     edits.push({part:'word/document.xml',paragraph,text,expected,start:expected.length,end:expected.length,value:' '+values.bank_account});
+  }
+  if(values.billing_mode==='other_address') {
+    const paragraph=spec.billing_same.paragraph+1, p=paragraphs[paragraph];
+    const original=p?.texts.join('') || '';
+    if(!/^(?:其它|其他)\s*[:：]?\s*$/.test(original) || !p.texts.length)throw new Error('账单地址位置不明确。');
+    const text=p.texts.length-1, expected=p.texts[text];
+    const separator=/[:：]\s*$/.test(original)?' ':'：';
+    edits.push({part:'word/document.xml',paragraph,text,expected,start:expected.length,end:expected.length,value:separator+values.billing_address});
   }
   for(const [index,key,label] of [[15,'install_zip','邮编'],[23,'job_title','经办人职务'],[27,'fax','传真'],[32,'billing_zip','邮编']]) {
     const value=values[key]; if(!value)continue;
