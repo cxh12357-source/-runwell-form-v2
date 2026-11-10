@@ -120,6 +120,81 @@ test('整段客户回复中的不同账单地址进入表单，默认信息随�
   assert.equal(submitted.customer.choice_billing,'1');
 });
 
+test('只提示缺失的资料，自动值可折叠修改且不会遮住必填项', async t => {
+  const {dom,root,form,input}=page();
+  const originals={Event:globalThis.Event,FormData:globalThis.FormData,fetch:globalThis.fetch};
+  globalThis.Event=dom.window.Event;
+  globalThis.FormData=dom.window.FormData;
+  t.after(()=>Object.assign(globalThis,originals));
+  const controls=reviewedControls('business-100m-no-voice');
+  const candidate={id:'reviewed-business-100m-no-voice',name:'测试原表',revision:'测试版',reviewed_controls:controls,
+    extra_fields:[...controls.inputs.map(x=>x[0]),...controls.groups.map(x=>x.key),'manual_billing_ack']};
+  const tariff={id:'one-year',name:'100M',reviewed_id:'business-100m-no-voice',template_id:candidate.id,business_id:'business-line',
+    business_version_id:'reviewed-no-voice',business_attribute:'new',voice_required:false,bandwidth:'100M',cycle:'年',amount:'100'};
+  const state={hosted:false,catalog:{businesses:[{id:'business-line',name:'商务专线'}],attributes:[{id:'new',name:'新装'}],versions:[]},
+    workspace:{tariffs:[tariff]}};
+  globalThis.fetch=async url=>{
+    if(url.endsWith('/match'))return new Response(JSON.stringify({data:{status:'unique',basis:['测试'],match_token:'token',candidates:[candidate]}}));
+    throw new Error('unexpected request '+url);
+  };
+  bindGeneration(root,state);
+  for(const [key,value] of [['biz','business-line'],['business_name','100M 智云上海专线基础版'],['attr','new'],['voice','no'],['discount','no']]) input(key,value,'change');
+  await root.querySelector('#match').onclick();
+  const details=root.querySelector('#default-settings');
+  const missing=root.querySelector('#missing-default-fields');
+  const inMissing=key=>missing.contains(form.elements.namedItem(key));
+  assert.equal(details.hidden,false);
+  assert.equal(details.open,false);
+  assert.equal(inMissing('install_zip'),true);
+  assert.equal(inMissing('applicant_role'),true);
+  assert.equal(inMissing('security_name'),false);
+  assert.equal(inMissing('security_phone'),false);
+  assert.equal(form.elements.security_name.required,false);
+  assert.equal(form.elements.applicant_role.required,true);
+  assert.equal(form.elements.billing_zip.disabled,true);
+  for(const key of ['job_title','fax','security_name','security_role','security_phone','service_use','application_date'])
+    assert.ok(details.contains(form.elements.namedItem(key)),key+' 应收起');
+
+  input('install_address','虚构一路 邮编：200001');
+  assert.equal(form.elements.install_zip.value,'200001');
+  assert.equal(inMissing('install_zip'),false);
+  assert.equal(form.elements.billing_zip.value,'200001');
+  form.elements.applicant_role.focus();
+  input('applicant_role','经理');
+  assert.equal(inMissing('applicant_role'),true,'输入时不移动焦点');
+  form.elements.applicant_role.blur();
+  await Promise.resolve();
+  assert.equal(inMissing('applicant_role'),false);
+  assert.equal(form.elements.security_role.value,'经理');
+  assert.equal(form.elements.job_title.value,'经理');
+  assert.equal(root.querySelector('#missing-defaults').hidden,true);
+
+  input('contact_name','测试甲'); input('phone','10000000000');
+  input('security_name','测试乙'); input('contact_name','测试丙');
+  assert.equal(form.elements.security_name.value,'测试乙');
+  input('security_role','');
+  assert.equal(inMissing('security_role'),true,'手动清空必填默认值时重新提示');
+  assert.equal(form.elements.applicant_role.required,false);
+  input('security_role','主管');
+  assert.equal(inMissing('security_role'),false);
+  input('service_use','');
+  assert.equal(inMissing('service_use'),true);
+  input('service_use','公办');
+  assert.equal(inMissing('service_use'),false);
+
+  input('billing_address_mode','different','change');
+  assert.equal(inMissing('billing_zip'),true);
+  input('billing_address','虚构二路');
+  input('billing_zip','123');
+  assert.equal(inMissing('billing_zip'),true,'邮编不足六位仍需补充');
+  input('billing_zip','200002');
+  assert.equal(inMissing('billing_zip'),false);
+  input('billing_address_mode','same','change');
+  assert.equal(form.elements.billing_zip.disabled,true);
+  assert.equal(form.elements.billing_zip.value,'200001');
+  assert.equal(root.querySelector('#missing-defaults').hidden,true);
+});
+
 test('已核验套餐 Word 写入实际账单地址和默认资料，传真可留空', async t => {
   for(const encoded of documents) {
     const bytes=Uint8Array.from(Buffer.from(encoded,'base64'));
