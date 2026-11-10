@@ -67,7 +67,7 @@ async function candidates(selection,db,tenant,plugin){
     const profile=plans.find(t=>t.id===selection.tariff_id)?.carrier_profile;
     if(chosen?.reviewed_id && c.id===chosen.template_id){
       c.reviewed_controls=plugin.reviewedControls(chosen.reviewed_id);
-      c.extra_fields=[...c.reviewed_controls.inputs.map(x=>x[0]),...c.reviewed_controls.groups.map(x=>x.key),...(c.reviewed_controls.blank?[]:['manual_billing_ack'])];
+      c.extra_fields=[...c.reviewed_controls.inputs.map(x=>x[0]),...c.reviewed_controls.groups.map(x=>x.key),...(c.reviewed_controls.package_options?.fields || []),...(c.reviewed_controls.ai_options?.fields || []),...(c.reviewed_controls.blank?[]:['manual_billing_ack'])];
     }
     if(profile && c.id.startsWith('carrier-')){
       c.carrier_controls=plugin.controls(profile);
