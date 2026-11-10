@@ -4,7 +4,7 @@ import {fillOriginalDocx} from './full-word.mjs';
 import {validateBusiness3Values} from './business-3-bridge.mjs';
 import {estimateBusiness3Layout} from './business-3-layout.mjs';
 import {buildFirstPageEdits,materializeFirstPageBoxes} from './first-page-fields.mjs';
-import {buildAuthorizationEdits} from './business-authorization.mjs';
+import {buildAuthorizationEdits,deferredAuthorizationFields} from './business-authorization.mjs';
 import {buildAiVoiceAuthorizationEdits} from './business-ai-authorization.mjs';
 import {BusinessInputError} from './business-input-error.mjs';
 import {aiOptionsMetadata, buildAiOptionEdits} from './ai-options.mjs';
@@ -43,12 +43,12 @@ export async function fillBusinessAi(id,bytes,values,dependencies) {
   if(noVoice && values.ai_fixed==='1')categories.push('固话');
   if(noVoice && (values.ai_mobile==='1'||values.ai_sub==='1'))categories.push('手机');
   const authValues={...values,service_type:noVoice?categories.join('、'):values.service_type,application_type:'新装'};
-  edits.push(...(id==='business-ai-v2-voice'?buildAiVoiceAuthorizationEdits(bytes,authValues,dependencies):
-    buildAuthorizationEdits(bytes,authValues,dependencies,{skipFields:uncertain?['service_type']:[]})));
+  edits.push(...(id==='business-ai-v2-voice'?buildAiVoiceAuthorizationEdits(bytes,authValues,dependencies,{skipFields:deferredAuthorizationFields}):
+    buildAuthorizationEdits(bytes,authValues,dependencies,{skipFields:[...deferredAuthorizationFields,...(uncertain?['service_type']:[])]})));
   edits.push(...buildFirstPageEdits(xml,values,spec,dependencies));
   let filled=fillOriginalDocx(bytes,edits,dependencies);
   if(wider)filled=adjustFirstPageIdentityLayout(filled,dependencies);
   return {file:materializeFirstPageBoxes(filled,values,spec,dependencies),
-    manualActions:[...(values.billing_mode==='other_manual'?['billing_address']:[]),...(voiceOptions?['voice_template','authorization','voice_identity']:[])],layoutReviewRequired:true,
+    manualActions:[...(values.billing_mode==='other_manual'?['billing_address']:[]),...(voiceOptions?['voice_template','authorization','voice_identity']:[]),'authorization_employee'],layoutReviewRequired:true,
     unmappedFields:[...(!noVoice?['voice_identity']:[]),...(!optionEdits.hasLineCount?['line_count']:[]),...(!optionEdits.supported?['service_options']:[]),'signature']};
 }

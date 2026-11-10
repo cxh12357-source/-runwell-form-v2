@@ -6,7 +6,8 @@ import {estimateBusiness3Layout} from './business-3-layout.mjs';
 import {BusinessInputError} from './business-input-error.mjs';
 import {packageFields,packageOptions,buildPackageEdits} from './package-options.mjs';
 import {adjustFirstPageIdentityLayout,hasWiderIdentityLayout} from './identity-layout.mjs';
-import {buildAuthorizationEdits} from './business-authorization.mjs';
+import {buildAuthorizationEdits,deferredAuthorizationFields} from './business-authorization.mjs';
+import {buildAiVoiceAuthorizationEdits} from './business-ai-authorization.mjs';
 import {buildFirstPageEdits,materializeFirstPageBoxes} from './first-page-fields.mjs';
 const W='http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const REQUIRED=['company_name','extra_credit_code','extra_industry','install_address','contact_name','id_number','phone','email','extra_company_size','extra_computer_count'];
@@ -89,7 +90,18 @@ export async function fillReviewedBusiness3(templateId,bytes,values,dependencies
     // Keep that field blank for staff instead of writing an incomplete value.
     const uncertain=Number(values.package_cloudphone_count)>0;
     edits.push(...buildAuthorizationEdits(bytes,{...values,service_type:categories.join('、'),application_type:'新装'},dependencies,
-      {skipFields:uncertain?['service_type']:[]}));
+      {skipFields:[...deferredAuthorizationFields,...(uncertain?['service_type']:[])]}));
+  } else if (packageOptions(templateId)) {
+    const landline=Number(values.package_landline_count)>0;
+    const mobile=Number(values.package_mobile_count)>0 || Number(values.package_secondary_count)>0;
+    const serviceType=values.service_type || (landline && mobile?'宽带、固话、手机':landline?'宽带、固话':mobile?'宽带、手机':'宽带');
+    if(!['宽带','宽带、固话','宽带、手机','宽带、固话、手机'].includes(serviceType))
+      throw new BusinessInputError('请选择授权书实际办理业务。');
+    if((Number(values.package_landline_count)>0 && !serviceType.includes('固话')) ||
+       ((Number(values.package_mobile_count)>0 || Number(values.package_secondary_count)>0) && !serviceType.includes('手机')))
+      throw new BusinessInputError('授权书业务类型与所选固话或手机业务不一致，请核对。');
+    edits.push(...buildAiVoiceAuthorizationEdits(bytes,{...values,service_type:serviceType,application_type:'新装'},dependencies,
+      {skipFields:deferredAuthorizationFields}));
   }
   edits.push(...buildFirstPageEdits(xml,values,spec,dependencies));
   const needed=[cycle];
@@ -104,6 +116,8 @@ export async function fillReviewedBusiness3(templateId,bytes,values,dependencies
   const pending=packageOptions(templateId)
     ? [...(templateId.endsWith('-no-voice')?['delegate_information']:['voice_identity']),'signature']
     : ['voice_identity','line_count','service_options','signature'];
-  return {file,manualActions:[...(values.billing_mode==='other_manual'?['billing_address']:[]),...(voiceOptions?['voice_template','authorization','voice_identity']:[])],layoutReviewRequired:true,
+  return {file,manualActions:[...(values.billing_mode==='other_manual'?['billing_address']:[]),...(voiceOptions?['voice_template','authorization','voice_identity']:[]),
+    ...(!noVoice && packageOptions(templateId) && Number(values.package_cloudphone_count)>0?['authorization_service_type']:[]),
+    ...(noVoice || packageOptions(templateId)?['authorization_employee']:[])],layoutReviewRequired:true,
     unmappedFields:pending};
 }

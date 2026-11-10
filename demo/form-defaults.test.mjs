@@ -31,7 +31,7 @@ test('自动填写跟随来源，分别手动修改后不被覆盖；地址与�
     .map(name=>'<label><input name="'+name+'"></label>').join('');
   const defaults=bindDefaults(form);
   defaults.templateChanged();
-  assert.equal(form.elements.service_use.value,'公办');
+  assert.equal(form.elements.service_use.value,'办公');
   assert.equal(form.elements.application_date.value,todayInShanghai());
   assert.equal(form.elements.applicant_role.value,'IT');
   assert.equal(form.elements.security_role.value,'IT');
@@ -114,7 +114,7 @@ test('整段客户回复中的不同账单地址进入表单，默认信息随�
   assert.equal(submitted.customer.job_title,'IT');
   assert.equal(submitted.customer.extra_company_size,'31-80人');
   assert.equal(submitted.customer.extra_computer_count,'16-40台');
-  assert.equal(submitted.customer.service_use,'公办');
+  assert.equal(submitted.customer.service_use,'办公');
   assert.equal(submitted.customer.application_date,todayInShanghai());
   input('billing_address_mode','same','change');
   input('install_address','虚构三路');
@@ -206,7 +206,7 @@ test('只提示缺失的资料，自动值可折叠修改且不会遮住必填�
   assert.equal(inMissing('security_role'),false);
   input('service_use','');
   assert.equal(inMissing('service_use'),true);
-  input('service_use','公办');
+  input('service_use','办公');
   assert.equal(inMissing('service_use'),false);
 
   input('billing_address_mode','different','change');
@@ -278,7 +278,7 @@ test('已核验套餐 Word 写入实际账单地址和默认资料，传真可�
         id_number:'000000000000000000',email:'a@b.invalid',payment_method:'cash',choice_billing:'1',
         extra_company_size:'31-80人',extra_computer_count:'16-40台',install_zip:'200001',billing_zip:'200002',
         job_title:'IT',security_name:'测试甲',security_role:'IT',security_phone:'10000000000',
-        service_use:'公办',application_date:'2026-11-10',service_type_choice:'0'};
+        service_use:'办公',application_date:'2026-11-10',service_type_choice:'0'};
       const result=await generateReviewed({reviewed_id:plan.id,reviewed_cycle:plan.cycles.includes('year')?'year':'document'},bytes,customer);
       const xml=strFromU8(unzipSync(result.file)['word/document.xml']);
       assert.match(xml,/虚构账单路2号/);

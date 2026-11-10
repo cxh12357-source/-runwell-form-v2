@@ -33,9 +33,11 @@ export function reviewedControls(id) {
     key==='company_name'?'guarantee_company':key==='extra_credit_code'?'guarantee_credit':key,key==='guarantor_id'?'* '+label:label,required,type
   ])]};
   const package_options=packageOptions(id);
+  const lineVoice=Boolean(package_options && /^business-(?:100m|200m)(?:-discount)?-voice$/.test(id));
   return {...(package_options?{package_options}:{}),ai_options:aiOptionsMetadata(id),groups:[
     {key:'choice_billing',label:'账单地址方式',required:true,options:['同公司地址','其他地址（下载后手工填入）']},
-    ...(['business-ai-v1','business-ai-v2-voice'].includes(id)?[{key:'service_type_choice',label:'授权书实际办理业务',required:true,options:['宽带','宽带、固话','宽带、手机','宽带、固话、手机']}]:[])
+    ...(['business-ai-v1','business-ai-v2-voice'].includes(id) || lineVoice ? [{key:'service_type_choice',label:'授权书实际办理业务',required:true,
+      default:'0',options:['宽带','宽带、固话','宽带、手机','宽带、固话、手机'],...(lineVoice?{auto_from_package:true}:{})}] : [])
   ],inputs:[
     ['extra_credit_code','统一社会信用代码',true],['extra_industry','企业所属行业',true],
     ['extra_company_size','企业规模',true],['extra_computer_count','计算机数量',true],
