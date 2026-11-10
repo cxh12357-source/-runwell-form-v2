@@ -1,0 +1,2 @@
+Temporary test to verify repository write access.
+Safe to remove after verification.
