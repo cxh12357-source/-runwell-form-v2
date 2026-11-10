@@ -49,13 +49,12 @@ export function generation(labels) {
     '<label>* 付款方式<select name="payment_method" required><option value="">请选择</option><option value="cash">现金</option><option value="collection">托收</option></select></label></div>' +
     '<p class="hint">账单地址默认与安装地址相同。</p>' +
     '<fieldset hidden id="bank-fields" disabled><div class="field-grid">' + field('bank_account', labels.bank_account) +
-    field('bank_name', labels.bank_name) + '</div></fieldset></details>' + internalPanel() +
+    field('bank_name', labels.bank_name) + '</div></fieldset></details>' + internalPanel() + '</fieldset>' +
     '<section id="missing-profile" class="notice slim" hidden><h3>请补充以下信息</h3>' +
-    '<p class="hint" id="profile-missing-summary" aria-live="polite"></p><div id="missing-profile-fields" class="field-grid"></div></section>' +
-    '</fieldset><div id="extra" class="field-grid"></div>' +
+    '<p class="hint" id="profile-missing-summary" aria-live="polite"></p><div id="missing-profile-fields" class="field-grid"></div>' +
+    '<div id="missing-defaults" hidden><div id="missing-default-fields" class="field-grid"></div></div></section>' +
+    '<div id="extra" class="field-grid"></div>' +
     '<section id="package-options" hidden></section>' +
-    '<section id="missing-defaults" hidden><h3>需要补充的信息</h3><p class="hint">未能自动填写的模板资料，请补充后生成。</p>' +
-    '<div id="missing-default-fields" class="field-grid"></div></section>' +
     '<details id="default-settings" hidden><summary>修改默认信息</summary>' +
     '<p class="hint">姓名和联系方式默认与经办人相同；申请人职务默认为 IT，可修改，经办人和信息安全责任人的职务默认与之相同。账单邮编在地址相同时复用安装邮编。</p>' +
     '<div id="default-fields" class="field-grid"><label id="applicant-role-field">申请人职务<input name="applicant_role" value="IT" maxlength="200" autocomplete="off"></label></div></details>');
@@ -105,13 +104,14 @@ export function bindGeneration(root, state) {
         const blank = input.required && !input.value.trim();
         input.setCustomValidity(blank ? '请填写' + label.dataset.label + '。' : '');
       }
-      const needsInput = !label.hidden && !input.disabled && input.required && !input.checkValidity();
+      const needsInput = !label.hidden && !input.disabled && input.required && !input.validity.valid;
       const destination = needsInput ? missingFields : defaultFields;
       // Do not move an input while someone is typing; reposition it on blur.
       if (label.parentElement !== destination && form.ownerDocument.activeElement !== input) destination.append(label);
     }
     missingDefaults.hidden = ![...missingFields.children].some(label => !label.hidden);
     defaultSettings.hidden = !form.querySelector('[data-default-field]');
+    disclosure?.refresh();
   }
 
   function syncCompanyChoices() {
