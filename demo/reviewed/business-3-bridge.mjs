@@ -6,7 +6,7 @@ import {estimateBusiness3Layout} from './business-3-layout.mjs';
 import {BusinessInputError} from './business-input-error.mjs';
 import {packageFields,packageOptions,buildPackageEdits} from './package-options.mjs';
 import {adjustFirstPageIdentityLayout,hasWiderIdentityLayout} from './identity-layout.mjs';
-import {buildAuthorizationEdits,authorizationOrganization,deferredAuthorizationFields} from './business-authorization.mjs';
+import {buildAuthorizationEdits,deferredAuthorizationFields} from './business-authorization.mjs';
 import {buildAiVoiceAuthorizationEdits} from './business-ai-authorization.mjs';
 import {buildFirstPageEdits,materializeFirstPageBoxes} from './first-page-fields.mjs';
 const W='http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -89,7 +89,7 @@ export async function fillReviewedBusiness3(templateId,bytes,values,dependencies
     // The document does not establish whether 商云通 belongs under 固话.
     // Keep that field blank for staff instead of writing an incomplete value.
     const uncertain=Number(values.package_cloudphone_count)>0;
-    edits.push(...buildAuthorizationEdits(bytes,{...values,...authorizationOrganization,service_type:categories.join('、'),application_type:'新装'},dependencies,
+    edits.push(...buildAuthorizationEdits(bytes,{...values,service_type:categories.join('、'),application_type:'新装'},dependencies,
       {skipFields:[...deferredAuthorizationFields,...(uncertain?['service_type']:[])]}));
   } else if (packageOptions(templateId)) {
     const landline=Number(values.package_landline_count)>0;
@@ -100,7 +100,7 @@ export async function fillReviewedBusiness3(templateId,bytes,values,dependencies
     if((Number(values.package_landline_count)>0 && !serviceType.includes('固话')) ||
        ((Number(values.package_mobile_count)>0 || Number(values.package_secondary_count)>0) && !serviceType.includes('手机')))
       throw new BusinessInputError('授权书业务类型与所选固话或手机业务不一致，请核对。');
-    edits.push(...buildAiVoiceAuthorizationEdits(bytes,{...values,...authorizationOrganization,service_type:serviceType,application_type:'新装'},dependencies,
+    edits.push(...buildAiVoiceAuthorizationEdits(bytes,{...values,service_type:serviceType,application_type:'新装'},dependencies,
       {skipFields:deferredAuthorizationFields}));
   }
   edits.push(...buildFirstPageEdits(xml,values,spec,dependencies));
