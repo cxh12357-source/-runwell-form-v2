@@ -3,9 +3,8 @@
 const W='http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const labels=['本单位','（统一社会信用代码为','），在贵公司办理','（手机/固话/宽带）业务的','（新装/移机/变更/改性能/拆机）事宜，本单位使用上述业务用于：','。我单位电信业务经办人为：','（身份证号为','）。'];
 const fields=['company_name','extra_credit_code','service_type','application_type','service_use','contact_name','id_number'];
-// The authorization is issued by Runwell; the customer on the application
-// form remains independent. The entrusted employee is not yet specified.
-export const authorizationOrganization=Object.freeze({company_name:'上海润网通讯网络有限公司',extra_credit_code:'91310230761644652F'});
+// The authorization uses the customer company on the application. The
+// entrusted employee is not yet specified.
 export const deferredAuthorizationFields=Object.freeze(['contact_name','id_number']);
 export function buildAuthorizationEdits(bytes, values, {unzipSync,sax}, {skipFields=[]}={}) {
   const raw=unzipSync(bytes)['word/document.xml'];
