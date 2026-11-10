@@ -9,7 +9,7 @@ import {buildFirstPageEdits,materializeFirstPageBoxes} from './first-page-fields
 const W='http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const REQUIRED=['company_name','extra_credit_code','extra_industry','install_address','contact_name','id_number','phone','email','extra_company_size','extra_computer_count'];
 const SECURITY={security_name:'信息安全责任人姓名',security_role:'信息安全责任人职务',security_phone:'信息安全责任人联系方式'};
-const ALLOWED=new Set([...REQUIRED,...Object.keys(SECURITY),'cycle','billing_mode','manual_billing_ack','payment_method','bank_account','install_zip','billing_zip','job_title','fax','service_use','application_date','service_type']);
+const ALLOWED=new Set([...REQUIRED,...Object.keys(SECURITY),'cycle','billing_mode','billing_address','manual_billing_ack','payment_method','bank_account','install_zip','billing_zip','job_title','fax','service_use','application_date','service_type']);
 const FIELD_NAMES={company_name:'企业全称',extra_credit_code:'统一社会信用代码',extra_industry:'企业所属行业',install_address:'安装地址',contact_name:'经办人姓名',id_number:'身份证号',phone:'经办人手机号',email:'电子邮箱',extra_company_size:'企业规模',extra_computer_count:'企业计算机数量'};
 const digest=async bytes=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
 
@@ -35,9 +35,13 @@ export function validateBusiness3Values(values, {requireSupplemental=true}={}) {
   if(!/^1\d{10}$/.test(values.phone)) throw new BusinessInputError('经办人手机号应为1开头的11位数字，请核对后重试。');
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) throw new BusinessInputError('电子邮箱格式不正确，请核对后重试。');
   if(!['month','year','two_years'].includes(values.cycle)) throw new BusinessInputError('请明确选择付费周期。');
-  if(!['same_company','other_manual'].includes(values.billing_mode)) throw new BusinessInputError('请选择账单地址方式。');
+  if(!['same_company','other_manual','other_address'].includes(values.billing_mode)) throw new BusinessInputError('请选择账单地址方式。');
   if(values.billing_mode==='other_manual' && values.manual_billing_ack!==true) throw new BusinessInputError('请确认需在 Word 中手动填写其他账单地址。');
   if(values.billing_mode==='same_company' && values.manual_billing_ack!==undefined && values.manual_billing_ack!==false) throw new BusinessInputError('账单确认与所选模式不一致。');
+  if(values.billing_mode==='other_address') {
+    const address=values.billing_address;
+    if(typeof address!=='string' || !address || address!==address.trim() || address.length>200 || !address.isWellFormed() || /[\x00-\x1f\x7f\ufffe\uffff]/u.test(address)) throw new BusinessInputError('请填写并核对账单地址。');
+  }
   if(!['cash','collection'].includes(values.payment_method)) throw new BusinessInputError('请选择付款方式。');
   if(values.payment_method==='collection' && (typeof values.bank_account!=='string' || !/^\d{6,32}$/.test(values.bank_account))) throw new BusinessInputError('托收需要填写6至32位数字的银行账号。');
   if(values.payment_method==='cash' && Object.hasOwn(values,'bank_account') && values.bank_account!=='') throw new BusinessInputError('现金付款不能填写托收账号。');
