@@ -41,9 +41,9 @@ export function reviewedControls(id) {
   ],inputs:[
     ['extra_credit_code','统一社会信用代码',true],['extra_industry','企业所属行业',true],
     ['extra_company_size','企业规模',true],['extra_computer_count','计算机数量',true],
-    ['install_zip','安装邮编',true],['billing_zip','账单邮编',true],['job_title','经办人职务'],['fax','传真'],
+    ['install_zip','安装邮编',false],['billing_zip','账单邮编',true],['job_title','经办人职务'],['fax','传真'],
     ['security_name','信息安全责任人姓名',true],['security_role','信息安全责任人职务',true],['security_phone','信息安全责任人联系方式',true],
-    ['service_use','业务用途',true],['application_date','申请日期',true,'date']
+    ['service_use','业务用途',true],['application_date','申请日期',false,'date']
   ]};
 }
 
