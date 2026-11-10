@@ -82,10 +82,10 @@ export function bindGeneration(root, state) {
   const bank = root.querySelector('#bank-fields');
   const application = form.querySelector('#application-fields');
   let disclosure;
-  const reviewLabels={billing_address:'其他账单地址',bank_name:'开户银行',authorization:'授权委托书',voice_identity:'语音实名资料（如适用）',voice_template:'已选择语音或移动业务，请核对是否需要带语音模板和手续材料',
+  const reviewLabels={billing_address:'其他账单地址',bank_name:'开户银行',authorization:'授权委托书',authorization_employee:'授权委托书受托员工姓名和身份证号码',authorization_service_type:'授权书中商云通业务类型',voice_identity:'语音实名资料（如适用）',voice_template:'已选择语音或移动业务，请核对是否需要带语音模板和手续材料',
     discount_factor:'折数及折后资费',line_count:'线路数量',service_options:'业务选项',delegate_information:'委托代办信息（如适用）',signature:'签字盖章',guarantee_signature:'签字盖章',
     guarantee_number:'电信业务号码',guarantee_date:'担保日期'};
-  let epoch = 0, candidates = [], template = null, matchToken, requestId, busy = false;
+  let epoch = 0, candidates = [], template = null, matchToken, requestId, busy = false, authorizationTypeEdited = false;
 
   function updateDefaultFields() {
     const securityRole = form.elements.namedItem('security_role');
@@ -126,10 +126,38 @@ export function bindGeneration(root, state) {
     }
   }
 
+  function syncAuthorizationChoice() {
+    const group=template?.reviewed_controls?.groups?.find(item=>item.key==='service_type_choice' && item.auto_from_package);
+    const select=form.elements.namedItem('service_type_choice');
+    if (!group || !select) return;
+    const selected=key=>Boolean(form.querySelector('[data-package-toggle="'+key+'"]')?.checked);
+    const landline=selected('package_landline_count');
+    const mobile=selected('package_mobile_count') || selected('package_secondary_count');
+    if (!authorizationTypeEdited) {
+      // Default to broadband; explicitly selected fixed/mobile services
+      // determine the additional categories. 商云通 is reviewed separately.
+      select.value=landline && mobile ? '3' : landline ? '1' : mobile ? '2' : '0';
+    }
+    const actual=group.options[select.value];
+    const conflict=actual && ((landline && !actual.includes('固话')) || (mobile && !actual.includes('手机')));
+    select.setCustomValidity(conflict?'授权书业务类型与勾选的固话或手机业务不一致，请核对。':'');
+  }
+
   form.addEventListener('input', updateDefaultFields);
   form.addEventListener('change', updateDefaultFields);
   form.addEventListener('input', event => { if (['extra_company_size','extra_computer_count'].includes(event.target.name)) syncCompanyChoices(); });
   form.addEventListener('change', event => { if (['extra_company_size','extra_computer_count'].includes(event.target.name)) syncCompanyChoices(); });
+  form.addEventListener('change', event => {
+    if (event.target.name==='service_type_choice' && template?.reviewed_controls?.groups?.some(g=>g.key==='service_type_choice' && g.auto_from_package))
+      authorizationTypeEdited=Boolean(event.target.value);
+    if (event.target.matches('[data-package-toggle]') || event.target.name?.startsWith('package_') || event.target.name==='service_type_choice') {
+      syncAuthorizationChoice();
+      disclosure?.refresh();
+    }
+  });
+  form.addEventListener('input', event => {
+    if (event.target.name?.startsWith('package_')) { syncAuthorizationChoice(); disclosure?.refresh(); }
+  });
   form.addEventListener('focusout', () => queueMicrotask(updateDefaultFields));
   root.querySelector('#fill-example').onclick = () => {
     const fixture = { company_name:'虚构测试企业', install_address:'虚构安装路一号',
@@ -152,6 +180,7 @@ export function bindGeneration(root, state) {
   };
   function choose(id) {
     template = candidates.find(row => row.id === id);
+    authorizationTypeEdited = false;
     const keys = template?.extra_fields ?? [];
     intake.setExtras(keys);
     const reviewed=template?.reviewed_controls;
@@ -161,7 +190,8 @@ export function bindGeneration(root, state) {
     const custom=reviewed || template?.carrier_controls;
     packageOptions.choose(reviewed?.package_options);
     for (const label of form.querySelectorAll('[data-default-field]')) label.remove();
-    extra.innerHTML = custom ? custom.groups.filter(g=>g.key!=='choice_billing').map(g=>'<label>'+esc(g.label)+'<select name="'+esc(g.key)+'" '+(g.required?'required':'')+'>'+options(g.options.map((name,id)=>({name,id})),g.required?'请选择':'不订购')+'</select></label>').join('')+
+    extra.innerHTML = custom ? custom.groups.filter(g=>g.key!=='choice_billing').map(g=>'<label>'+esc(g.label)+'<select name="'+esc(g.key)+'" '+(g.required?'required':'')+'>'+options(g.options.map((name,id)=>({name,id})),g.required?'请选择':'不订购')+'</select>'+
+      (g.auto_from_package?'<span class="hint">默认宽带，可根据已勾选的固话、手机业务调整；商云通请核对。</span>':'')+'</label>').join('')+
       custom.inputs.filter(([key])=>!intakeExtraKeys.includes(key) && !defaultFieldKeys.has(key)).map(([key,label,required,type])=>'<label>'+esc(label)+'<input type="'+(['date','email'].includes(type)?type:'text')+'" name="'+esc(key)+'" '+(required?'required':'')+' maxlength="500" autocomplete="off"></label>').join('') :
       keys.filter(k => !intakeExtraKeys.includes(k)).map(k => field(k, '模板必填 · ' + k.slice(6))).join('');
     if (custom) defaultFields.insertAdjacentHTML('beforeend', custom.inputs.filter(([key])=>defaultFieldKeys.has(key)).map(([key,label,required,type])=>
@@ -174,6 +204,7 @@ export function bindGeneration(root, state) {
     }
     defaults.templateChanged();
     syncCompanyChoices();
+    syncAuthorizationChoice();
     updateDefaultFields();
     disclosure?.refresh();
     generate.disabled = busy || !template;
