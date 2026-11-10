@@ -72,10 +72,10 @@ const demoPlugin = {
     });
   }
 };
-export async function bundleDemo(entry = 'frontend/app.js') {
+export async function bundleDemo(entry = 'frontend/app.js', { defaults = true } = {}) {
   const result = await build({ absWorkingDir: root, entryPoints: [entry], bundle: true, write: false,
     platform: 'browser', format: 'esm', target: 'es2022', legalComments: 'none', minify: true,
-    define:{ __DEMO_AI_ENDPOINT__:JSON.stringify(aiEndpoint) },
+    define:{ __DEMO_AI_ENDPOINT__:JSON.stringify(aiEndpoint), __RUNWELL_DEFAULT_CATALOG__:JSON.stringify(defaults) },
     loader: { '.wasm': 'binary' }, plugins: [demoPlugin] });
   return result.outputFiles[0].contents;
 }
