@@ -61,7 +61,7 @@ test('设备依赖、固话和主副卡数量校验，错误发生在折叠区�
   const toggle=(key,value=true)=>change('[data-package-toggle="'+key+'"]',value);
   change('[name="package_free_ext"]',true);
   assert.equal(el('package_free_ext').checkValidity(),false);
-  assert.equal(root.querySelector('details').open,true);
+  assert.equal(el('package_free_ext').closest('details').open,true,'免费包的错误展开免费包');
   change('[name="package_fttr"]',true);
   assert.equal(el('package_free_ext').checkValidity(),true);
   change('[name="package_plugin"]',true);
@@ -71,6 +71,7 @@ test('设备依赖、固话和主副卡数量校验，错误发生在折叠区�
   toggle('package_paid_ext_count');
   assert.equal(el('package_paid_ext_count').required,true);
   assert.equal(el('package_paid_ext_count').checkValidity(),false);
+  assert.equal(el('package_paid_ext_count').closest('details').open,true,'收费包的错误展开收费包');
   change('[name="package_paid_ext_count"]','1');
   assert.equal(el('package_paid_ext_count').checkValidity(),true);
   assert.equal(el('package_plugin').checkValidity(),true);
