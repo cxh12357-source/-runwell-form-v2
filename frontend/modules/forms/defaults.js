@@ -80,6 +80,7 @@ export function bindDefaults(form) {
   return {
     sync,
     sameBilling: same,
+    isLinked(key) { return linked.get(key) !== false; },
     setBillingFromReply(value) {
       setMode('different');
       otherAddress = value;
