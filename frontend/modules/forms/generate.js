@@ -4,6 +4,7 @@ import { classifyTariff, businessFields, businessSelectors, bindBusinessSelectio
 
 import { businessText } from './intake-rules.js';
 import { bindIntake, intakePanel, internalPanel, intakeExtraKeys } from './intake.js';
+import { bindDefaults } from './defaults.js';
 
 const customerFields = ['company_name','install_address','billing_address','contact_name','phone','id_number','email'];
 function field(name, title, type = 'text') {
@@ -31,8 +32,14 @@ export function generatedMaterials(tariff) {
 export function generation(labels) {
   return generationShell('<fieldset id="application-fields" class="application-fields">' + intakePanel() +
     '<div class="divider"></div><h3>客户资料</h3><button id="fill-example" type="button">用虚构样例补全空白栏</button><div class="field-grid">' +
-    customerFields.map(key => field(key, '* ' + (key === 'id_number' ? '身份证号码' : key === 'email' ? 'E-MAIL' : labels[key]), key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text')).join('') +
+    customerFields.map(key => {
+      if (key === 'billing_address') return '<label>账单地址方式<select name="billing_address_mode"><option value="same">与安装地址相同</option><option value="different">不同，单独填写</option></select></label>' +
+        '<label id="billing-address-field" hidden>* 账单地址<input name="billing_address" required maxlength="500" autocomplete="off"></label>';
+      const input = field(key, '* ' + (key === 'id_number' ? '身份证号码' : key === 'email' ? 'E-MAIL' : labels[key]), key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text');
+      return key === 'contact_name' ? input + '<label>申请人职务<input name="applicant_role" maxlength="200" autocomplete="off"></label>' : input;
+    }).join('') +
     '<label>* 付款方式<select name="payment_method" required><option value="">请选择</option><option value="cash">现金</option><option value="collection">托收</option></select></label></div>' +
+    '<p class="hint">申请人职务会默认用于经办人和信息安全责任人；姓名与电话默认使用经办人信息，可分别修改。地址未注明邮编时请手动填写。</p>' +
     '<fieldset hidden id="bank-fields" disabled><div class="field-grid">' + field('bank_account', labels.bank_account) +
     field('bank_name', labels.bank_name) + '</div></fieldset>' + internalPanel() + '</fieldset><div id="extra" class="field-grid"></div>');
 }
@@ -40,7 +47,9 @@ export function generation(labels) {
 export function bindGeneration(root, state) {
   const form = root.querySelector('#generate-form');
   const selected = bindBusinessSelection(form, state);
-  const intake = bindIntake(form);
+  const defaults = bindDefaults(form);
+  const intake = bindIntake(form, defaults);
+  defaults.sync();
   const result = root.querySelector('#match-result');
   const extra = root.querySelector('#extra');
   const generate = root.querySelector('#generate');
@@ -53,10 +62,13 @@ export function bindGeneration(root, state) {
     guarantee_number:'电信业务号码',guarantee_date:'担保日期'};
   let epoch = 0, candidates = [], template = null, matchToken, requestId, busy = false;
   root.querySelector('#fill-example').onclick = () => {
-    const fixture = { company_name:'虚构测试企业', install_address:'虚构安装路一号', billing_address:'虚构账单路二号',
-      contact_name:'测试甲乙', phone:'10000000000', id_number:'000000000000000000', email:'a@b.invalid' };
+    const fixture = { company_name:'虚构测试企业', install_address:'虚构安装路一号',
+      contact_name:'测试甲乙', applicant_role:'经理', phone:'10000000000', id_number:'000000000000000000', email:'a@b.invalid' };
     for (const [key, value] of Object.entries(fixture)) {
-      if (!form.elements[key].value) form.elements[key].value = value;
+      if (!form.elements[key].value) {
+        form.elements[key].value = value;
+        form.elements[key].dispatchEvent(new Event('input', {bubbles:true}));
+      }
     }
     form.elements.company_name.dispatchEvent(new Event('change', {bubbles:true}));
     const payment = form.elements.payment_method;
@@ -75,13 +87,10 @@ export function bindGeneration(root, state) {
     const reviewed=template?.reviewed_controls;
     application.hidden=application.disabled=Boolean(reviewed?.blank);
     const custom=reviewed || template?.carrier_controls;
-    extra.innerHTML = custom ? custom.groups.map(g=>'<label>'+esc(g.label)+'<select name="'+esc(g.key)+'" '+(g.required?'required':'')+'>'+options(g.options.map((name,id)=>({name,id})),g.required?'请选择':'不订购')+'</select></label>').join('')+
+    extra.innerHTML = custom ? custom.groups.filter(g=>g.key!=='choice_billing').map(g=>'<label>'+esc(g.label)+'<select name="'+esc(g.key)+'" '+(g.required?'required':'')+'>'+options(g.options.map((name,id)=>({name,id})),g.required?'请选择':'不订购')+'</select></label>').join('')+
       custom.inputs.filter(([key])=>!intakeExtraKeys.includes(key)).map(([key,label,required,type])=>'<label>'+esc(label)+'<input type="'+(['date','email'].includes(type)?type:'text')+'" name="'+esc(key)+'" '+(required?'required':'')+' maxlength="500" autocomplete="off"></label>').join('') :
       keys.filter(k => !intakeExtraKeys.includes(k)).map(k => field(k, '模板必填 · ' + k.slice(6))).join('');
-    if(reviewed && !reviewed.blank){
-      extra.insertAdjacentHTML('beforeend','<label hidden id="review-billing"><input type="checkbox" name="manual_billing_ack" required disabled> 确认下载后在 Word 中手工填入其他账单地址</label>');
-    }
-    form.elements.billing_address.disabled=Boolean(reviewed && !reviewed.blank);
+    defaults.templateChanged();
     generate.disabled = busy || !template;
     hint.hidden=Boolean(template);
     requestId = undefined;
@@ -102,15 +111,6 @@ export function bindGeneration(root, state) {
   form.addEventListener('change', event => {
     if (businessFields.includes(event.target.name)) invalidate();
     if (event.target.name === 'candidate') choose(event.target.value);
-    if(event.target.name==='choice_billing'){
-      const confirmation=extra.querySelector('#review-billing');
-      form.elements.billing_address.disabled=confirmation?event.target.value!=='1':event.target.value==='0';
-      if(confirmation){
-        confirmation.hidden=event.target.value!=='1';
-        form.elements.manual_billing_ack.disabled=confirmation.hidden;
-        form.elements.manual_billing_ack.checked=false;
-      }
-    }
     if (event.target.name === 'payment_method') {
       bank.disabled = bank.hidden = event.target.value !== 'collection';
       if (bank.disabled) for (const input of bank.querySelectorAll('input')) input.value = '';
@@ -146,7 +146,13 @@ export function bindGeneration(root, state) {
     for (const [name, value] of new FormData(form)) {
       if (customerFields.includes(name) || ['payment_method','bank_name','bank_account'].includes(name) || template.extra_fields?.includes(name)) customer[name] = value;
     }
-    if(customer.choice_billing==='0')customer.billing_address=customer.install_address;
+    if(defaults.sameBilling()) {
+      customer.billing_address = customer.install_address;
+      if (template.extra_fields?.includes('billing_zip')) customer.billing_zip = customer.install_zip;
+    }
+    // The verified Word labels its checkbox “same as company address”, which
+    // is not necessarily the installation address. Write the actual address.
+    if (template.reviewed_controls && !template.reviewed_controls.blank || template.carrier_controls) customer.choice_billing = '1';
     requestId ??= crypto.randomUUID();
     busy = true;
     generate.disabled = true;
