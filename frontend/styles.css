@@ -16,6 +16,7 @@
 [data-delete-confirm] { color: #9b2525; }
 
 .application-fields { min-width: 0; }
+#billing-address-field[hidden], #extra > label[hidden] { display: none; }
 #review-billing[hidden] { display: none; }
 #review-billing input { width: auto; height: auto; justify-self: start; }
 
