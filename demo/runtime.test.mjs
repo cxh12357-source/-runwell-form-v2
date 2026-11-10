@@ -7,7 +7,7 @@ import { tariffs } from '../backend/modules/forms/preview/rules.mjs';
 import { loadReviewedFixtures } from './reviewed-fixtures.mjs';
 
 test('免登录运行：拒绝缺项、生成 Word、刷新后下载、上传及启停、浏览器间隔离，且无业务网络请求', async () => {
-  const bundle = await bundleDemo('demo/runtime.mjs');
+  const bundle = await bundleDemo('demo/runtime.mjs', { defaults:false });
   const source = 'data:text/javascript;base64,' + Buffer.from(bundle).toString('base64');
   globalThis.location = new URL('https://demo.example.invalid');
   globalThis.indexedDB = new IDBFactory();

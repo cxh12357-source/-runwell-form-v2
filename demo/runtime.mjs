@@ -4,6 +4,7 @@ import wasmBinary from 'sql.js/dist/sql-wasm.wasm';
 import { handleForms } from 'runwell:acceptance';
 import * as carrier from './carrier.mjs';
 import * as reviewed from './reviewed-integration.mjs';
+import { installDefaultCatalog } from './default-catalog.mjs';
 
 const name = 'runwell-browser-demo-v1';
 const limit = 32 * 1024 * 1024;
@@ -93,7 +94,8 @@ export async function localFetch(path, options = {}) {
           put: (key, bytes) => files.set(key, bytes),
           delete: key => files.delete(key)
         };
-        let migrated=false;
+        let migrated=__RUNWELL_DEFAULT_CATALOG__ && path.startsWith('/api/v1/forms/') && path !== '/api/v1/forms/mode'
+          ? await installDefaultCatalog(database(sql),files,clientId) : false;
         const env = { DB: database(sql), BUCKET: bucket, DEMO_IMPORT: {...carrier,...reviewed,markMigrated:()=>{migrated=true;}} };
         const headers = new Headers(options.headers);
         // The marker and demo session live entirely inside the browser; never forward them.
