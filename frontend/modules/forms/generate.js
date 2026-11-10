@@ -3,10 +3,11 @@ import { copyTextArea, downloadControl, options, request, status } from './share
 import { classifyTariff, businessFields, businessSelectors, bindBusinessSelection } from './business-selection.js';
 
 import { businessText } from './intake-rules.js';
-import { bindIntake, intakePanel, internalPanel, intakeExtraKeys } from './intake.js';
+import { bindIntake, intakePanel, lookupPanel, internalPanel, intakeExtraKeys } from './intake.js';
 import { bindDefaults } from './defaults.js';
 import { bindPackageOptions } from './package-options.js';
 import { renderAiOptions, bindAiOptions } from './ai-options.js';
+import { bindDisclosure } from './disclosure.js';
 
 const customerFields = ['company_name','install_address','billing_address','contact_name','phone','id_number','email'];
 const defaultFieldKeys = new Set(['install_zip','billing_zip','job_title','fax','security_name',
@@ -36,8 +37,10 @@ export function generatedMaterials(tariff, voiceTemplateReview = false) {
 }
 
 export function generation(labels) {
-  return generationShell('<fieldset id="application-fields" class="application-fields">' + intakePanel() +
-    '<div class="divider"></div><h3>客户资料</h3><button id="fill-example" type="button">用虚构样例补全空白栏</button><div class="field-grid">' +
+  return generationShell('<fieldset id="application-fields" class="application-fields">' + intakePanel() + lookupPanel() +
+    '<div class="divider"></div><div class="profile-heading"><h3>查看/修改资料</h3><button id="edit-profile" type="button">查看/修改资料</button></div>' +
+    '<details id="customer-fields" class="profile-section"><summary>客户资料</summary>' +
+    '<button id="fill-example" type="button">用虚构样例补全空白栏</button><div class="field-grid">' +
     customerFields.map(key => {
       if (key === 'billing_address') return '<label>账单地址方式<select name="billing_address_mode"><option value="same">与安装地址相同</option><option value="different">不同，单独填写</option></select></label>' +
         '<label id="billing-address-field" hidden>* 账单地址<input name="billing_address" required maxlength="500" autocomplete="off"></label>';
@@ -46,7 +49,10 @@ export function generation(labels) {
     '<label>* 付款方式<select name="payment_method" required><option value="">请选择</option><option value="cash">现金</option><option value="collection">托收</option></select></label></div>' +
     '<p class="hint">账单地址默认与安装地址相同。</p>' +
     '<fieldset hidden id="bank-fields" disabled><div class="field-grid">' + field('bank_account', labels.bank_account) +
-    field('bank_name', labels.bank_name) + '</div></fieldset>' + internalPanel() + '</fieldset><div id="extra" class="field-grid"></div>' +
+    field('bank_name', labels.bank_name) + '</div></fieldset></details>' + internalPanel() +
+    '<section id="missing-profile" class="notice slim" hidden><h3>请补充以下信息</h3>' +
+    '<p class="hint" id="profile-missing-summary" aria-live="polite"></p><div id="missing-profile-fields" class="field-grid"></div></section>' +
+    '</fieldset><div id="extra" class="field-grid"></div>' +
     '<section id="package-options" hidden></section>' +
     '<section id="missing-defaults" hidden><h3>需要补充的信息</h3><p class="hint">未能自动填写的模板资料，请补充后生成。</p>' +
     '<div id="missing-default-fields" class="field-grid"></div></section>' +
@@ -76,6 +82,7 @@ export function bindGeneration(root, state) {
   const hint = root.querySelector('#generate-hint');
   const bank = root.querySelector('#bank-fields');
   const application = form.querySelector('#application-fields');
+  let disclosure;
   const reviewLabels={billing_address:'其他账单地址',bank_name:'开户银行',authorization:'授权委托书',voice_identity:'语音实名资料（如适用）',voice_template:'已选择语音或移动业务，请核对是否需要带语音模板和手续材料',
     discount_factor:'折数及折后资费',line_count:'线路数量',service_options:'业务选项',delegate_information:'委托代办信息（如适用）',signature:'签字盖章',guarantee_signature:'签字盖章',
     guarantee_number:'电信业务号码',guarantee_date:'担保日期'};
@@ -168,6 +175,7 @@ export function bindGeneration(root, state) {
     defaults.templateChanged();
     syncCompanyChoices();
     updateDefaultFields();
+    disclosure?.refresh();
     generate.disabled = busy || !template;
     hint.hidden=Boolean(template);
     requestId = undefined;
@@ -218,7 +226,7 @@ export function bindGeneration(root, state) {
     event.preventDefault();
     if (busy || !template) return;
     const reminder=template.reviewed_controls?.blank?'':intake.beforeGenerate();
-    if(reminder) return status(root, reminder);
+    if(reminder) { disclosure.reveal(true); return status(root, reminder); }
     const customer = {};
     for (const [name, value] of new FormData(form)) {
       if (customerFields.includes(name) || ['payment_method','bank_name','bank_account'].includes(name) || template.extra_fields?.includes(name)) customer[name] = value;
@@ -245,4 +253,5 @@ export function bindGeneration(root, state) {
       if (error.status === 409) { invalidate(); status(root, error.message); }
     } finally { busy = false; generate.disabled = !template; }
   };
+  disclosure = bindDisclosure(form, intake);
 }
