@@ -4,12 +4,13 @@ export function bindDisclosure(form, intake) {
   const sections = ['customer-fields','voice-fields','company-fields'].map(id=>form.querySelector('#'+id));
   const panel = form.querySelector('#missing-profile');
   const list = form.querySelector('#missing-profile-fields');
+  const defaultList = form.querySelector('#missing-default-fields');
   const summary = form.querySelector('#profile-missing-summary');
   const mirrors = new Map();
   let revealing = false, focusQueued = false;
 
   function applicable(control) {
-    return control && !control.disabled && !control.matches(':disabled') && !control.closest('[hidden]');
+    return control && form.contains(control) && !control.disabled && !control.matches(':disabled') && !control.closest('[hidden]');
   }
   function createMirror(control) {
     const label = control.closest('label').cloneNode(true);
@@ -17,25 +18,34 @@ export function bindDisclosure(form, intake) {
     const mirror = label.querySelector('input,select,textarea');
     mirror.removeAttribute('id');
     mirror.removeAttribute('name'); // Never submit a second copy of a field.
+    // The original control owns validation and submission.
+    mirror.setAttribute('form','runwell-missing-mirror-no-form');
     mirror.required = false;
     mirror.dataset.proxyFor = control.name;
     mirror.value = control.value;
+    mirror.checked = control.checked;
     for (const type of ['input','change']) mirror.addEventListener(type,()=>{
       control.value = mirror.value;
+      if (control.type==='checkbox' || control.type==='radio') control.checked = mirror.checked;
       control.dispatchEvent(new control.ownerDocument.defaultView.Event(type,{bubbles:true}));
     });
     list.append(label);
     mirrors.set(control,{label,mirror});
   }
   function refresh() {
-    if (!revealing) return;
-    const attention = new Set(intake.attentionKeys());
+    const attention = new Set(revealing ? intake.attentionKeys() : []);
     const missing = [];
-    for (const section of sections) for (const control of section.querySelectorAll('label input,label select,label textarea')) {
-      if (applicable(control) && (attention.has(control.name) || (control.required && !control.validity.valid)))
-        missing.push({control,section});
+    if (revealing) for (const selector of ['#application-fields','#extra','#ai-options','#package-options']) {
+      const scope = form.querySelector(selector);
+      for (const control of scope.querySelectorAll('label input[name],label select[name],label textarea[name]')) {
+        if (applicable(control) && control.willValidate && (attention.has(control.name) || !control.validity.valid))
+          missing.push(control);
+      }
     }
-    const wanted = new Set(missing.filter(item=>!item.section.open).map(item=>item.control));
+    const defaults = [...form.querySelectorAll('#applicant-role-field, [data-default-field]')]
+      .filter(label=>!label.hidden).map(label=>label.querySelector('input'))
+      .filter(control=>control && !control.disabled && !control.matches(':disabled') && control.required && !control.validity.valid);
+    const wanted = new Set(missing);
     for (const [control,item] of mirrors) {
       if (!wanted.has(control) && (!applicable(control) || form.ownerDocument.activeElement!==item.mirror)) {
         item.label.remove(); mirrors.delete(control);
@@ -44,10 +54,14 @@ export function bindDisclosure(form, intake) {
     for (const control of wanted) {
       if (!mirrors.has(control)) createMirror(control);
       const mirror = mirrors.get(control).mirror;
-      if (form.ownerDocument.activeElement!==mirror && mirror.value!==control.value) mirror.value=control.value;
+      if (form.ownerDocument.activeElement!==mirror) {
+        if (mirror.value!==control.value) mirror.value=control.value;
+        if (mirror.checked!==control.checked) mirror.checked=control.checked;
+      }
     }
-    panel.hidden = mirrors.size===0;
-    summary.textContent = missing.length ? '请补充或核对 '+missing.length+' 项资料。' : '资料已补齐。';
+    const count = missing.length + defaults.length;
+    panel.hidden = mirrors.size===0 && defaultList.children.length===0 && defaults.length===0;
+    summary.textContent = count ? '请补充或核对 '+count+' 项资料。' : '资料已补齐。';
   }
   function focusMissing() {
     if (focusQueued) return;
