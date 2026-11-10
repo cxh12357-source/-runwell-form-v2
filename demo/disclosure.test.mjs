@@ -60,14 +60,18 @@ test('保留原有业务选择、客户话术及查询入口，识别后只展�
   assert.equal(root.querySelector('#customer-fields').open,false);
   assert.equal(root.querySelector('#missing-profile').hidden,false);
   assert.deepEqual([...root.querySelectorAll('[data-proxy-for]')].map(el=>el.dataset.proxyFor),['email']);
+  assert.equal(root.querySelector('#missing-profile').contains(form.elements.install_zip),true);
+  assert.match(root.querySelector('#profile-missing-summary').textContent,/2 项/);
   const mirror=proxy(root,'email');mirror.focus();mirror.value='a@b.invalid';
   mirror.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
   assert.equal(form.elements.email.value,'a@b.invalid');
   assert.equal(root.querySelectorAll('[name="email"]').length,1,'只提交原表单字段');
   assert.ok(proxy(root,'email'),'输入期间不移除焦点');
   mirror.blur();await Promise.resolve();
-  assert.equal(root.querySelector('#missing-profile').hidden,true);
+  assert.equal(root.querySelector('#missing-profile').hidden,false,'邮编仍需补充');
+  assert.match(root.querySelector('#profile-missing-summary').textContent,/1 项/);
   input('install_zip','200001');
+  assert.equal(root.querySelector('#missing-profile').hidden,true);
   assert.equal(form.checkValidity(),true);
   await form.onsubmit({preventDefault(){}});
   assert.equal(submitted().customer.email,'a@b.invalid');
@@ -79,6 +83,61 @@ test('保留原有业务选择、客户话术及查询入口，识别后只展�
   input('contact_name','测试乙');root.querySelector('#customer-fields').open=false;root.querySelector('#customer-fields').open=true;
   assert.equal(form.elements.contact_name.value,'测试乙');
   assert.equal(form.elements.security_name.value,'测试乙','默认关联仍然生效');
+});
+
+test('企业资料和邮编在同一区域统计，展开资料后仍显示并双向同步',async t=>{
+  const {dom,root,form,input,submitted}=setup(t);
+  choose(input);
+  await root.querySelector('#match').onclick();
+  input('company_name','无样例虚构企业','change');
+  root.querySelector('#reply-text').value='企业全称：无样例虚构企业，安装地址：虚构一路，经办人：测试甲，手机号：10000000000，身份证号：000000000000000000，邮箱：a@b.invalid，付款方式：现金';
+  root.querySelector('#read-reply').click();
+  const panel=root.querySelector('#missing-profile'), summary=root.querySelector('#profile-missing-summary');
+  assert.equal(panel.hidden,false);
+  assert.match(summary.textContent,/3 项/);
+  assert.ok(proxy(root,'extra_credit_code'));
+  assert.ok(proxy(root,'extra_industry'));
+  assert.ok(panel.contains(form.elements.install_zip));
+  assert.equal(root.querySelectorAll('#missing-profile h3').length,1);
+
+  root.querySelector('#company-fields').open=true;
+  root.querySelector('#company-fields').dispatchEvent(new dom.window.Event('toggle'));
+  assert.equal(panel.hidden,false,'展开企业信息不能让未填缺项消失');
+  assert.match(summary.textContent,/3 项/);
+  input('extra_credit_code','TEST00000000000001');
+  assert.equal(proxy(root,'extra_credit_code'),null);
+  assert.match(summary.textContent,/2 项/);
+  const industry=proxy(root,'extra_industry');
+  industry.value='虚构行业';
+  industry.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  assert.equal(form.elements.extra_industry.value,'虚构行业');
+  assert.match(summary.textContent,/1 项/);
+  input('install_zip','200001');
+  assert.equal(panel.hidden,true);
+  assert.equal(form.checkValidity(),true);
+  await form.onsubmit({preventDefault(){}});
+  assert.equal(submitted().customer.extra_credit_code,'TEST00000000000001');
+  assert.equal(submitted().customer.extra_industry,'虚构行业');
+  assert.equal(submitted().customer.install_zip,'200001');
+});
+
+test('统一缺项包含已选择套餐的条件必填项，填写后同步原有控件',async t=>{
+  const {dom,root,form,input}=setup(t);
+  choose(input);
+  await root.querySelector('#match').onclick();
+  input('company_name','虚构测试企业','change');
+  root.querySelector('#reply-text').value=reply+'，邮箱：a@b.invalid，付款方式：现金';
+  root.querySelector('#read-reply').click();
+  input('install_zip','200001');
+  assert.equal(root.querySelector('#missing-profile').hidden,true);
+  input('package_line_type','existing','change');
+  assert.match(root.querySelector('#profile-missing-summary').textContent,/1 项/);
+  const number=proxy(root,'package_existing_number');
+  assert.ok(number);
+  number.value='TEST-123';
+  number.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  assert.equal(form.elements.package_existing_number.value,'TEST-123');
+  assert.equal(root.querySelector('#missing-profile').hidden,true);
 });
 
 test('托收与语音缺项按条件展示，切换后不留下无关字段',t=>{
