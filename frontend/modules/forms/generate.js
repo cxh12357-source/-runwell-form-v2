@@ -12,7 +12,8 @@ import { bindDisclosure } from './disclosure.js';
 const customerFields = ['company_name','install_address','billing_address','contact_name','phone','id_number','email'];
 const defaultFieldKeys = new Set(['install_zip','billing_zip','job_title','fax','security_name',
   'security_role','security_phone','service_use','application_date']);
-const linkedSecurityFields = new Set(['security_name','security_role','security_phone']);
+const hiddenDefaultKeys = new Set(['install_zip','job_title','fax','application_date']);
+const linkedSecurityFields = new Set(['security_name','security_phone']);
 function field(name, title, type = 'text') {
   return '<label>' + esc(title) + '<input name="' + esc(name) + '" type="' + type + '" required maxlength="500" autocomplete="off"></label>';
 }
@@ -56,8 +57,8 @@ export function generation(labels) {
     '<div id="extra" class="field-grid"></div>' +
     '<section id="package-options" hidden></section>' +
     '<details id="default-settings" hidden><summary>修改默认信息</summary>' +
-    '<p class="hint">姓名和联系方式默认与经办人相同；申请人职务默认为 IT，可修改，经办人和信息安全责任人的职务默认与之相同。账单邮编在地址相同时复用安装邮编。</p>' +
-    '<div id="default-fields" class="field-grid"><label id="applicant-role-field">申请人职务<input name="applicant_role" value="IT" maxlength="200" autocomplete="off"></label></div></details>');
+    '<p class="hint">信息安全责任人的姓名和联系方式默认与经办人相同，职务默认 IT，可按实际情况修改。</p>' +
+    '<div id="default-fields" class="field-grid"><label id="applicant-role-field" hidden>申请人职务<input name="applicant_role" maxlength="200" autocomplete="off"></label></div></details>');
 }
 
 export function bindGeneration(root, state) {
@@ -88,19 +89,18 @@ export function bindGeneration(root, state) {
   let epoch = 0, candidates = [], template = null, matchToken, requestId, busy = false, authorizationTypeEdited = false;
 
   function updateDefaultFields() {
-    const securityRole = form.elements.namedItem('security_role');
-    const hasRole = Boolean(securityRole || form.elements.namedItem('job_title'));
-    applicantRoleLabel.hidden = !hasRole;
-    applicantRole.required = Boolean(securityRole?.dataset.templateRequired === 'true' && defaults.isLinked('security_role'));
-    applicantRole.setCustomValidity(applicantRole.required && !applicantRole.value.trim() ? '请填写申请人职务。' : '');
+    applicantRoleLabel.hidden = true;
+    applicantRole.required = false;
+    applicantRole.setCustomValidity('');
 
     const fields = [applicantRoleLabel, ...form.querySelectorAll('[data-default-field]')];
     for (const label of fields) {
       const input = label.querySelector('input');
       const key = input.name;
       if (key !== 'applicant_role') {
+        if (hiddenDefaultKeys.has(key)) label.hidden = true;
         const linked = linkedSecurityFields.has(key) && defaults.isLinked(key);
-        input.required = input.dataset.templateRequired === 'true' && !linked;
+        input.required = input.dataset.templateRequired === 'true' && !linked && !hiddenDefaultKeys.has(key);
         const blank = input.required && !input.value.trim();
         input.setCustomValidity(blank ? '请填写' + label.dataset.label + '。' : '');
       }
@@ -161,7 +161,7 @@ export function bindGeneration(root, state) {
   form.addEventListener('focusout', () => queueMicrotask(updateDefaultFields));
   root.querySelector('#fill-example').onclick = () => {
     const fixture = { company_name:'虚构测试企业', install_address:'虚构安装路一号',
-      contact_name:'测试甲乙', applicant_role:'IT', phone:'10000000000', id_number:'000000000000000000', email:'a@b.invalid' };
+      contact_name:'测试甲乙', phone:'10000000000', id_number:'000000000000000000', email:'a@b.invalid' };
     for (const [key, value] of Object.entries(fixture)) {
       if (!form.elements[key].value) {
         form.elements[key].value = value;
@@ -195,7 +195,7 @@ export function bindGeneration(root, state) {
       custom.inputs.filter(([key])=>!intakeExtraKeys.includes(key) && !defaultFieldKeys.has(key)).map(([key,label,required,type])=>'<label>'+esc(label)+'<input type="'+(['date','email'].includes(type)?type:'text')+'" name="'+esc(key)+'" '+(required?'required':'')+' maxlength="500" autocomplete="off"></label>').join('') :
       keys.filter(k => !intakeExtraKeys.includes(k)).map(k => field(k, '模板必填 · ' + k.slice(6))).join('');
     if (custom) defaultFields.insertAdjacentHTML('beforeend', custom.inputs.filter(([key])=>defaultFieldKeys.has(key)).map(([key,label,required,type])=>
-      '<label data-default-field data-label="'+esc(label)+'">'+esc(label)+'<input type="'+(['date','email'].includes(type)?type:'text')+'" name="'+esc(key)+'" data-template-required="'+Boolean(required)+'" '+
+      '<label data-default-field data-label="'+esc(label)+'" '+(hiddenDefaultKeys.has(key)?'hidden':'')+'>'+esc(label)+'<input type="'+(['date','email'].includes(type)?type:'text')+'" name="'+esc(key)+'" data-template-required="'+Boolean(required)+'" '+
       (key.endsWith('_zip')?'inputmode="numeric" pattern="[0-9]{6}" title="请输入6位数字邮编" maxlength="6"':'maxlength="500"')+' autocomplete="off"></label>').join(''));
     if (custom) for (const group of custom.groups) {
       const control=form.elements.namedItem(group.key);
@@ -243,11 +243,13 @@ export function bindGeneration(root, state) {
       candidates = match.candidates;
       matchToken = match.match_token;
       if (!candidates.length) return status(root, match.status === 'conflict' ? '套餐与已选资料冲突，请重新核对。' : '没有可用模板，请核对套餐或联系模板管理员。');
-      result.innerHTML = '<p>匹配依据　' + esc(match.basis.join(' · ')) + '</p>';
       if (candidates.length === 1) {
-        result.innerHTML += '<p>已匹配　' + esc(candidates[0].name) + '（' + esc(candidates[0].revision) + '）</p>';
+        const basis=match.basis.join(' · ');
+        const description=basis.includes(candidates[0].name)?basis:candidates[0].name+' · '+basis;
+        result.innerHTML = '<p>已匹配　' + esc(description) + '（' + esc(candidates[0].revision) + '）</p>';
         choose(candidates[0].id);
       } else {
+        result.innerHTML = '<p>匹配依据　' + esc(match.basis.join(' · ')) + '</p>';
         result.innerHTML += '<label>多个模板符合条件，请选择<select name="candidate" required>' +
           options(candidates.map(t => ({ id: t.id, name: t.name + '（' + t.revision + '）' }))) + '</select></label>';
       }
