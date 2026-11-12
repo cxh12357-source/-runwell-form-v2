@@ -281,7 +281,7 @@ export function bindGeneration(root, state) {
         downloadControl('/records/' + row.id + '/file', '下载已生成的 Word', state.hosted) + generatedMaterials(row.tariff,row.review?.includes('voice_template'));
       const copyMaterials=generated.querySelector('#copy-generated-materials');
       if(copyMaterials)copyMaterials.onclick=()=>copyTextArea(generated.querySelector('#generated-material-text'),generated.querySelector('#generated-material-feedback'));
-      form.dispatchEvent(new CustomEvent('runwell:form-generated',{detail:{id:row.id}}));
+      form.dispatchEvent(new form.ownerDocument.defaultView.CustomEvent('runwell:form-generated',{detail:{id:row.id}}));
     } catch (error) {
       status(root, error.message);
       if (error.status === 409) { invalidate(); status(root, error.message); }

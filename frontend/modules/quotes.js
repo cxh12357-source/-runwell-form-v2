@@ -239,7 +239,7 @@ export function bindQuotes(root) {
     sheet.replaceChildren(...doc.body.children);
     preview.hidden=false;
     status.textContent='报价单预览已生成。';
-    form.dispatchEvent(new CustomEvent('runwell:quote-generated',{bubbles:true,detail:readValues(detailKeys)}));
+    form.dispatchEvent(new form.ownerDocument.defaultView.CustomEvent('runwell:quote-generated',{bubbles:true,detail:readValues(detailKeys)}));
     focusPreview();
   };
   download.onclick=()=>{
