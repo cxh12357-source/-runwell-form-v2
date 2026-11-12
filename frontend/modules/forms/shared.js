@@ -1,7 +1,9 @@
 import { escape as esc } from '../../lib/api.js';
 
 let token = '';
-export function setToken(value) { token = value; }
+let actor = null;
+export function setToken(value, identity = null) { token = value; actor = identity; }
+export function currentIdentity() { return actor; }
 export function hasToken() { return Boolean(token); }
 export async function request(path, { method = 'GET', data, file = false, credential = token } = {}) {
   const headers = { Authorization: 'Bearer ' + credential };

@@ -16,7 +16,7 @@ if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error('无法确认当前提交，
 const require = createRequire(import.meta.url);
 const runtime = resolve(root, 'demo/runtime.mjs');
 const read = name => readFile(resolve(root, name), 'utf8');
-const names = new Set(['index.html', 'styles.css', 'app.js', 'licenses.txt', 'ship.json', 'version.json', 'robots.txt']);
+const names = new Set(['index.html', 'styles.css', 'app.js', 'licenses.txt', 'ship.json', 'version.json', 'robots.txt', 'runwell-logo.svg']);
 const out = await lstat(output).catch(error => { if (error.code !== 'ENOENT') throw error; });
 if (out && (!out.isDirectory() || out.isSymbolicLink())) throw new Error('演示输出必须为普通目录。');
 if (out) for (const file of await readdir(output, { withFileTypes: true })) {
@@ -53,6 +53,11 @@ const demoPlugin = {
       let contents = (await readFile(path, 'utf8')).replaceAll('\r\n', '\n');
       if (/[\\/](api|shared)\.js$/.test(path)) {
         contents = 'import { localFetch } from "runwell:local";\n' + replace(contents, 'await fetch(', 'await localFetch(');
+        if (path.endsWith('shared.js')) {
+          contents = 'import { currentDemoAccount } from "runwell:local";\n' + replace(contents,
+            'export function currentIdentity() { return actor; }',
+            "export function currentIdentity() { const id=currentDemoAccount(); return {id,role:id==='admin'?'admin':'staff',simulated:true}; }");
+        }
       } else if (path.endsWith('preview.js')) {
         contents = replace(contents, 'let body = login(hosted);', "let body = '';");
         contents = 'import { currentDemoAccount, switchDemoAccount } from "runwell:local";\n' + contents;
@@ -91,6 +96,7 @@ async function publishFiles() {
   ].map(([entry, filename]) => readFile(resolve(dirname(dirname(entry)), filename), 'utf8')));
   const files = {
     'index.html': html, 'styles.css': await read('frontend/styles.css'), 'app.js': app,
+    'runwell-logo.svg': await read('frontend/runwell-logo.svg'),
     'licenses.txt': licenses.join('\n\n'), 'version.json': JSON.stringify({ commit, branch: 'feature/project-skeleton', mode: 'browser-demo' }),
     'robots.txt': 'User-agent: *\nDisallow: /\n', 'ship.json': JSON.stringify({ headers: [{ source: '/(.*)', headers: [
       { key: 'Cache-Control', value: 'no-cache' }, { key: 'Content-Security-Policy', value: policy },

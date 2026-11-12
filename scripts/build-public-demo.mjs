@@ -20,10 +20,26 @@ const read = name => readFile(resolve(source, 'frontend', name), 'utf8');
 const files = [];
 const add = (path, content) => files.push({ path, content });
 add('index.html', (await read('index.html')).replace('href="/styles.css"', 'href="./styles.css"').replace('src="/app.js"', 'src="./app.js"').replace('本地开发预览', '免登录展示版 · ' + commit.slice(0, 7)));
+add('runwell-logo.svg', await read('runwell-logo.svg'));
 add('styles.css', await read('styles.css') + '\n.demo-banner{margin:0 0 24px}.demo-banner p+p{margin-top:6px}#bank-fields[hidden]{display:none}button:disabled{cursor:not-allowed;opacity:.65}input[type=file]{height:auto}textarea:disabled{color:#64778b;background:#f6f8fb}td{padding:20px 14px}pre{white-space:pre-wrap;max-width:480px}.demo-version{color:#7a899b;font-size:12px;margin-top:28px}\n');
 files.find(f => f.path === 'styles.css').content += '.required-mark{color:#b42318;font-weight:700;margin-inline-end:.35em}.customer-wide{grid-column:span 2}#billing-address-details[hidden]{display:none}@media(max-width:680px){.customer-wide{grid-column:auto}}\n';
 add('modules/home.js', (await read('modules/home.js')).replace('当前先搭建表单生成、历史记录和套餐模板管理。', '表单生成、历史记录和套餐模板管理已接入新版展示界面。'));
-add('modules/settings.js', `export const renderSettings = () => '<h1>设置</h1><p>当前展示版不提供接口设置。</p>';\nexport const bindSettings = () => {};\n`);
+add('modules/quotes.js', replaceRequired(await read('modules/quotes.js'),
+  'const draftStorage = () => window.localStorage;', 'const draftStorage = () => null;'));
+for (const file of ['modules/quote-tariffs.js', 'modules/quote-tariff-data.js']) add(file, await read(file));
+add('modules/quote-advisor.js', 'export const renderQuoteAdvisor = () => "";\nexport const bindQuoteAdvisor = () => {};\n');
+add('modules/workflow.js', 'export const bindWorkflow = () => {};\n');
+add('modules/settings.js', `const pages = {
+  '/settings/account': ['账号设置', '当前为免登录展示版。'],
+  '/settings/feedback': ['意见反馈', '请将意见反馈给项目负责人。'],
+  '/settings/api': ['AI / 软件 API 接口设置', '请在本地后台或已连接设置服务的版本中配置 AI 和企查查凭据。']
+};
+export function renderSettings(path) {
+  const [title, message] = pages[path] || pages['/settings/api'];
+  return '<h1>' + title + '</h1><p>' + message + '</p>';
+}
+export const bindSettings = () => {};
+`);
 add('lib/api.js', (await read('lib/api.js')).split('export async function get')[0]);
 // Pre-render read-only forms at build time. The published modules contain markup only.
 const state = {
@@ -77,7 +93,9 @@ export function bindForms() {
   }
 }
 `);
-add('app.js', replaceRequired(await read('app.js'), "from './modules/forms.js'", "from './modules/demo-forms.js'").replace("view.innerHTML = html;", `view.innerHTML = html + '<p class="demo-version">界面来源：GitHub 已合并版本 ${commit.slice(0, 7)} · 表单填写由 oneaskq 负责</p>';`));
+add('app.js', replaceRequired(await read('app.js'), "from './modules/forms.js'", "from './modules/demo-forms.js'")
+  .replace("import { currentIdentity } from './modules/forms/shared.js';", "const currentIdentity = () => null;")
+  .replace("view.innerHTML = html;", `view.innerHTML = html + '<p class="demo-version">界面来源：GitHub 已合并版本 ${commit.slice(0, 7)} · 表单填写由 oneaskq 负责</p>';`));
 add('version.json', JSON.stringify({ commit, branch: 'feature/project-skeleton', mode: 'static-demo' }));
 add('ship.json', JSON.stringify({ headers: [{ source: '/(.*)', headers: [{ key: 'Cache-Control', value: 'no-cache' }] }] }));
 const names = new Set(files.map(f => f.path));

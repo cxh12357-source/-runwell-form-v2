@@ -21,7 +21,7 @@ if (process.argv.includes('--forms-preview')) {
   }
   preview = { version, route: previewRoutes(store, identities) };
 }
-const server = createApp(preview);
+const server = createApp(preview,{quoteAiKey:process.env.DEEPSEEK_API_KEY||process.env.AI_API_KEY,quoteAiModel:process.env.AI_MODEL});
 server.on('close', () => store?.close());
 server.on('error', error => { console.error('本地服务启动失败：', error.message); process.exitCode = 1; });
 server.listen(port, '127.0.0.1', () => {

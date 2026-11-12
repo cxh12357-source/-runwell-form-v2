@@ -223,6 +223,15 @@ test('看板统计按账号隔离，管理员可查看和下载全员表单', as
   assert.equal(team.employees.find(person=>person.id==='员工B').forms_count,team.records.filter(row=>row.created_by==='员工B').length);
   assert.ok(team.records.some(row=>row.id===a.id));
   assert.ok(team.records.some(row=>row.id===b.id));
+  const filter=new URLSearchParams({period:'all',business_id:a.business_id,business_name:a.tariff.name,
+    business_attribute:a.business_attribute,voice:'no',discount:'no'});
+  const filtered=await result(call('/dashboard?'+filter,staff));
+  assert.ok(filtered.records.some(row=>row.id===a.id));
+  assert.ok(filtered.records.every(row=>row.created_by==='员工A' && row.tariff.name===a.tariff.name));
+  assert.equal(filtered.employees[0].forms_count,filtered.records.length);
+  filter.set('voice','yes');
+  assert.deepEqual((await result(call('/dashboard?'+filter,staff))).records,[]);
+  assert.equal((await call('/dashboard?discount=invalid',staff)).status,400);
   const archived=await result(call('/dashboard?period=custom&from=2000-01-01&to=2000-01-31',admin));
   assert.deepEqual(archived.records,[]);
   assert.ok(archived.employees.every(person=>person.forms_count===0));
@@ -240,6 +249,12 @@ test('看板按上海时间切分周和月，并保留自定义结束日全天',
   assert.deepEqual(dashboardPeriod(query('period=week'),now),{period:'week',offset:0,from:'2026-11-09',to:'2026-11-15'});
   assert.deepEqual(dashboardPeriod(query('period=week&offset=1'),now),{period:'week',offset:1,from:'2026-11-02',to:'2026-11-08'});
   assert.deepEqual(dashboardPeriod(query('period=month&offset=1'),now),{period:'month',offset:1,from:'2026-10-01',to:'2026-10-31'});
+  assert.deepEqual(dashboardPeriod(query('period=quarter'),now),{period:'quarter',offset:0,from:'2026-10-01',to:'2026-12-31'});
+  assert.deepEqual(dashboardPeriod(query('period=quarter&offset=4'),now),{period:'quarter',offset:4,from:'2025-10-01',to:'2025-12-31'});
+  assert.deepEqual(dashboardPeriod(query('period=fiscal'),now),{period:'fiscal',offset:0,from:'2026-01-01',to:'2026-12-31',fiscal_start_month:1});
+  assert.deepEqual(dashboardPeriod(query('period=fiscal&fiscal_start_month=12&offset=1'),now),
+    {period:'fiscal',offset:1,from:'2024-12-01',to:'2025-11-30',fiscal_start_month:12});
+  assert.throws(()=>dashboardPeriod(query('period=fiscal&fiscal_start_month=13'),now),/财年起始月份/);
   const actor={id:'A',role:'staff'};
   const records=['2026-11-08T15:59:59Z','2026-11-08T16:00:00Z','2026-11-09T15:59:59Z','2026-11-09T16:00:00Z']
     .map((created_at,id)=>({id,created_at,created_by:'A'}));

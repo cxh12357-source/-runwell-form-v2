@@ -30,7 +30,7 @@ test('公网展示包仅含白名单界面和测试元数据，不带后台、�
   assert.deepEqual(await entries(output), [
     'app.js', 'demo-data.js', 'index.html', 'lib/api.js', 'modules/demo-forms.js',
     'modules/forms/generate.js', 'modules/forms/shared.js', 'modules/forms/templates.js',
-    'modules/home.js', 'modules/settings.js', 'ship.json', 'styles.css', 'version.json'
+    'modules/home.js', 'modules/quote-advisor.js', 'modules/quote-tariff-data.js', 'modules/quote-tariffs.js', 'modules/quotes.js', 'modules/settings.js', 'modules/workflow.js', 'runwell-logo.svg', 'ship.json', 'styles.css', 'version.json'
   ].sort());
   const texts = await Promise.all((await entries(output)).map(name => readFile(join(output, name), 'utf8')));
   for (const text of texts) assert.doesNotMatch(text, /fetch\s*\(|XMLHttpRequest|Authorization|localStorage|sessionStorage|(?:ship|deploy)-[a-f0-9]{32}/i);

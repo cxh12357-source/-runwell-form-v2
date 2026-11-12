@@ -1,4 +1,5 @@
 // Standalone HTTPS worker. Model credentials are configured as server secrets.
+import { analyzeQuoteDialogue, quoteAiFailure, validateQuoteDialogue } from './quote-ai.mjs';
 const keys=['bandwidth','name','revision','voice','discount'];
 const json=(data,status,headers)=>Response.json(data,{status,headers});
 const enc=new TextEncoder();
@@ -65,17 +66,19 @@ export function createTemplateAi(upstream=fetch) {
     if(new URL(request.url).searchParams.get('settings')==='1')return settings(request,env,headers);
     if(request.method!=='POST')return json({error:'方法不支持。'},405,headers);
     if(!await authorized(request,env.DEMO_AI_TOKEN))return json({error:'AI 验收口令无效。'},401,headers);
+    const quote=new URL(request.url).searchParams.get('purpose')==='quote';
     let data;
     try{
-      data=await readJson(request,4096);
-      if(typeof data.evidence!=='string'||!data.evidence.trim()||data.evidence.length>1000)throw new Error();
-    }catch(error){return error instanceof RangeError?json({error:'套餐摘要过长。'},413,headers):json({error:'套餐摘要格式无效。'},400,headers);}
+      data=await readJson(request,quote?32000:4096);
+      if(quote?!validateQuoteDialogue(data.dialogue):typeof data.evidence!=='string'||!data.evidence.trim()||data.evidence.length>1000)throw new Error();
+    }catch(error){return json({error:error instanceof RangeError?'提交内容过长。':'提交内容格式无效。'},error instanceof RangeError?413:400,headers);}
     if(Date.now()-windowStart>=60000){windowStart=Date.now();used=0;}
     if(used>=10)return json({error:'解析请求过多，请稍后再试。'},429,headers);
     used++;
     try {
       const apiKey=(await stored(env,'credentials'))?.ai||env.AI_API_KEY;
       if(!apiKey)return json({error:'AI 服务尚未配置。'},503,headers);
+      if(quote)return json({data:await analyzeQuoteDialogue(data.dialogue,apiKey,upstream,env.AI_MODEL)},200,headers);
       const result=await upstream('https://api.deepseek.com/chat/completions',{method:'POST',redirect:'error',
         signal:AbortSignal.timeout(15000),headers:{Authorization:'Bearer '+apiKey,'Content-Type':'application/json'},
         body:JSON.stringify({model:env.AI_MODEL||'deepseek-flash',thinking:{type:'disabled'},max_tokens:350,response_format:{type:'json_object'},messages:[
@@ -88,7 +91,7 @@ export function createTemplateAi(upstream=fetch) {
       if(!['带语音','不带语音'].includes(out.voice))out.voice='';
       if(!['打折','不打折'].includes(out.discount))out.discount='';
       return json({data:out},200,headers);
-    }catch{return json({error:'AI 暂时无法返回有效结果，请稍后重试。'},502,headers);}
+    }catch(error){return json(quote?quoteAiFailure(error):{error:'AI 暂时无法返回有效结果，请稍后重试。'},502,headers);}
   };
 }
 export default {fetch:createTemplateAi()};
