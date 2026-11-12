@@ -1,8 +1,9 @@
 import { dashboardTrend } from './dashboard-trend.js';
 import { escape as esc, get } from '../../lib/api.js';
-import { request, status, refresh, hasToken, setToken, downloadControl } from './shared.js';
+import { request, status, refresh, hasToken, setToken, downloadControl, options } from './shared.js';
 import { bindGeneration, generation } from './generate.js';
 import { bindTemplates, templatesView } from './templates.js';
+import { classifyTariff } from './business-selection.js';
 
 function history(rows, catalog, hosted, fileRoot = '/records/', fileLabel = '下载 Word') {
   const label = (list, id) => esc(list.find(e => e.id === id)?.name ?? id);
@@ -14,12 +15,13 @@ function history(rows, catalog, hosted, fileRoot = '/records/', fileLabel = '下
     '</td><td>已生成</td><td>' + downloadControl(fileRoot + r.id + '/file', fileLabel, hosted) + '</td></tr>').join('') + '</tbody></table></div>';
 }
 
-const periods=[['week','本周'],['month','本月'],['all','累计'],['custom','自定义日期']];
+const periods=[['week','本周'],['month','本月'],['quarter','本季度'],['fiscal','本财年'],['all','累计'],['custom','自定义日期']];
+const pageable=new Set(['week','month','quarter','fiscal']);
 function dashboardChart(board, employee) {
   const max = Math.max(1, ...board.employees.map(person => person.forms_count));
   return '<section class="dashboard-chart" aria-labelledby="dashboard-chart-title">' +
     '<h3 id="dashboard-chart-title">Word 生成次数</h3>' +
-    (!board.records.length ? '<p class="hint">所选期间暂无 Word 生成记录。</p>' : '') +
+    (!board.records.length ? '<p class="hint">没有符合所选条件的 Word 生成记录。</p>' : '') +
     '<ul class="dashboard-bars">' + board.employees.map(person => {
       const label = board.scope === 'team'
         ? '<button type="button" class="dashboard-employee" data-employee="' + esc(person.id) + '" aria-pressed="' +
@@ -33,7 +35,10 @@ function dashboardChart(board, employee) {
 
 function dashboardResults(board, employee) {
   const {period,offset,from,to}=board.range;
-  const label=period==='all'?'累计':period==='custom'?'自定义日期':offset===0?(period==='week'?'本周':'本月'):(period==='week'?'往期周':'往期月');
+  const label=period==='all'?'累计':period==='custom'?'自定义日期':
+    period==='quarter'?from.slice(0,4)+' 年第 '+Math.ceil(Number(from.slice(5,7))/3)+' 季度':
+    period==='fiscal'?from.slice(0,4)+' 财年（'+board.range.fiscal_start_month+' 月起）':
+    offset===0?(period==='week'?'本周':'本月'):(period==='week'?'往期周':'往期月');
   return '<p class="dashboard-range"><strong>'+label+'</strong>'+(from?' · '+esc(from)+' 至 '+esc(to):' · 全部时间')+'（上海时间）</p>'+
     '<p class="dashboard-total"><strong>'+board.records.length+'</strong> 次 Word 生成'+(board.scope==='team'?' · '+board.employees.length+' 个账号':'')+'</p>'+
     dashboardChart(board, employee) +
@@ -51,25 +56,56 @@ function dashboardDetails(board,catalog,employee) {
     (rows.length?history(rows,catalog,false,'/dashboard/records/','下载 Word 查看'):'<p>所选范围内没有生成记录。</p>');
 }
 function dashboard(board,catalog) {
+  const select=(name,label)=>'<label>'+label+'<select name="'+name+'"><option value="">全部</option></select></label>';
   return '<p class="hint">'+(board.scope==='team'?'点击员工姓名查看个人明细。':'仅查看当前账号的记录。')+
     ' 只统计成功生成的 Word；同一业务重新生成也会计一次。报价与审核暂未开放。</p>'+
     '<div class="dashboard-toolbar" role="group" aria-label="统计周期">'+periods.map(([value,label])=>
       '<button type="button" data-period="'+value+'" aria-pressed="'+(board.range.period===value)+'">'+label+'</button>').join('')+'</div>'+
     '<div id="dashboard-paging" class="dashboard-toolbar"><button type="button" data-period-step="1">上一期</button>'+
     '<button type="button" data-period-step="-1" disabled>下一期</button></div>'+
+    '<div id="dashboard-fiscal" class="dashboard-toolbar" hidden><label>财年起始月份<select>'+
+    Array.from({length:12},(_,i)=>'<option value="'+(i+1)+'">'+(i+1)+' 月</option>').join('')+'</select></label></div>'+
     '<form id="dashboard-custom" class="dashboard-custom" hidden><label>开始日期<input type="date" name="from" required></label>'+
     '<label>结束日期<input type="date" name="to" required></label><button class="button">应用日期</button></form>'+
+    '<form id="dashboard-business"><div class="field-grid">'+select('business_id','业务种类')+
+    select('business_name','业务名称')+select('business_attribute','业务属性')+
+    select('voice','是否带语音')+select('discount','是否打折')+'</div>'+
+    '<div class="dashboard-toolbar"><button class="button">应用筛选</button>'+
+    '<button type="reset">清空业务筛选</button></div></form>'+
     '<div id="dashboard-results" aria-live="polite">'+dashboardResults(board,'')+'</div>'+
     '<section id="dashboard-details" aria-labelledby="dashboard-detail-title">'+dashboardDetails(board,catalog,'')+'</section>';
 }
 function bindDashboard(root,state) {
   const paging=root.querySelector('#dashboard-paging'), custom=root.querySelector('#dashboard-custom');
+  const fiscal=root.querySelector('#dashboard-fiscal'), fiscalMonth=fiscal.querySelector('select');
+  const business=root.querySelector('#dashboard-business'), fields=business.elements;
   const results=root.querySelector('#dashboard-results'), details=root.querySelector('#dashboard-details');
   let board=state.board, employee='', selected=board.range.period, requestId=0;
+  const currentNames=state.workspace.tariffs.map(classifyTariff);
+  function names() {
+    const type=fields.business_id.value, previous=fields.business_name.value;
+    const choices=[...new Set([...currentNames,...(board.business_names||[])]
+      .filter(item=>!type||item.business_id===type).map(item=>item.name).filter(Boolean))]
+      .sort((a,b)=>a.localeCompare(b,'zh-CN',{numeric:true}));
+    fields.business_name.innerHTML=options(choices.map(name=>({id:name,name})),'全部业务名称');
+    if(choices.includes(previous))fields.business_name.value=previous;
+  }
+  fields.business_id.innerHTML=options(state.catalog.businesses,'全部业务种类');
+  fields.business_attribute.innerHTML=options(state.catalog.attributes,'全部业务属性');
+  const binary=(yes,no)=>options([{id:'yes',name:yes},{id:'no',name:no},{id:'unknown',name:'未记录或不适用'}],'全部');
+  fields.voice.innerHTML=binary('带语音','不带语音');
+  fields.discount.innerHTML=binary('打折','不打折');
+  names();
+  fields.business_id.onchange=names;
+  function appliedRange(){
+    const {period,offset,from,to}=board.range;
+    return period==='custom'?{period,from,to}:{period,offset:String(offset)};
+  }
   function controls() {
     for(const button of root.querySelectorAll('[data-period]'))button.setAttribute('aria-pressed',String(button.dataset.period===selected));
     custom.hidden=selected!=='custom';
-    paging.hidden=selected!=='week' && selected!=='month';
+    paging.hidden=!pageable.has(selected);
+    fiscal.hidden=selected!=='fiscal';
     paging.querySelector('[data-period-step="-1"]').disabled=board.range.offset===0;
     paging.querySelector('[data-period-step="1"]').disabled=board.range.offset>=520;
   }
@@ -77,7 +113,10 @@ function bindDashboard(root,state) {
     const ticket=++requestId;
     status(root,'正在更新统计…');
     try {
-      const next=await request('/dashboard?'+new URLSearchParams(params));
+      const query=new URLSearchParams(params);
+      if(params.period==='fiscal')query.set('fiscal_start_month',fiscalMonth.value);
+      for(const [key,value] of new FormData(business))if(value)query.set(key,value);
+      const next=await request('/dashboard?'+query);
       if(ticket!==requestId || !root.isConnected)return;
       board=next;
       if(!board.employees.some(person=>person.id===employee))employee='';
@@ -119,6 +158,14 @@ function bindDashboard(root,state) {
     event.preventDefault();
     if(custom.elements.from.value>custom.elements.to.value){status(root,'开始日期不能晚于结束日期。');return;}
     void load({period:'custom',from:custom.elements.from.value,to:custom.elements.to.value});
+  };
+  business.onsubmit=event=>{event.preventDefault();void load(appliedRange());};
+  fiscalMonth.onchange=()=>{void load({period:'fiscal'});};
+  business.onreset=event=>{
+    event.preventDefault();
+    for(const field of business.querySelectorAll('select'))field.value='';
+    names();
+    void load(appliedRange());
   };
   controls();
 }
@@ -184,15 +231,16 @@ export function bindPreview() {
       const submit = loginForm.querySelector('button');
       submit.disabled = true;
       try {
-        let credential;
+        let credential, actor;
         if (loginForm.elements.account) {
           const session = await request('/test-session', {method:'POST', data:{account:loginForm.elements.account.value}});
           credential = session.token;
+          actor = session.actor;
         } else {
           credential = loginForm.elements.token.value.trim();
-          await request('/workspace', {credential});
+          ({actor} = await request('/workspace', {credential}));
         }
-        if (root.isConnected) { setToken(credential); refresh(true); }
+        if (root.isConnected) { setToken(credential, actor); refresh(true); }
       } catch (error) { status(root, error.message); } finally { submit.disabled = false; }
     };
     return;

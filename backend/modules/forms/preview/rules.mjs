@@ -121,11 +121,11 @@ function parseDashboardDay(value) {
 }
 export function dashboardPeriod(query=new URLSearchParams(), now=Date.now()) {
   const period=query.get('period') ?? 'week', rawOffset=query.get('offset') ?? '0';
-  insist(['week','month','all','custom'].includes(period),'请选择有效的统计周期。',400);
+  insist(['week','month','quarter','fiscal','all','custom'].includes(period),'请选择有效的统计周期。',400);
   insist(/^(0|[1-9]\d{0,2})$/.test(rawOffset) && Number(rawOffset)<=520,'请选择有效的往期范围。',400);
   const offset=Number(rawOffset);
   if(period==='all')return {period,offset:0,from:null,to:null};
-  let start,end;
+  let start,end,fiscalStartMonth;
   if(period==='custom'){
     start=parseDashboardDay(query.get('from')); end=parseDashboardDay(query.get('to'));
     insist(start<=end,'开始日期不能晚于结束日期。',400);
@@ -135,14 +135,55 @@ export function dashboardPeriod(query=new URLSearchParams(), now=Date.now()) {
     if(period==='week'){
       const monday=(today.getUTCDay()+6)%7;
       start=Date.UTC(y,m,d-monday-offset*7); end=start+6*dashboardDay;
+    } else if(period==='quarter'){
+      const first=Math.floor(m/3)*3-offset*3;
+      start=Date.UTC(y,first,1); end=Date.UTC(y,first+3,1)-dashboardDay;
+    } else if(period==='fiscal'){
+      const raw=query.get('fiscal_start_month') ?? '1';
+      insist(/^(?:[1-9]|1[0-2])$/.test(raw),'请选择有效的财年起始月份。',400);
+      fiscalStartMonth=Number(raw);
+      const first=fiscalStartMonth-1, year=y-(m<first?1:0)-offset;
+      start=Date.UTC(year,first,1); end=Date.UTC(year+1,first,1)-dashboardDay;
     } else {
       start=Date.UTC(y,m-offset,1); end=Date.UTC(y,m-offset+1,1)-dashboardDay;
     }
   }
-  return {period,offset,from:dayLabel(start),to:dayLabel(end)};
+  return {period,offset,from:dayLabel(start),to:dayLabel(end),...(fiscalStartMonth?{fiscal_start_month:fiscalStartMonth}:{})};
 }
 
-export function workDashboard(actor, roster, records, range=dashboardPeriod()) {
+const dashboardKeys=['business_id','business_name','business_attribute','voice','discount'];
+export function dashboardFilters(query) {
+  const filters={};
+  for(const key of dashboardKeys){
+    const value=query.get(key)?.trim();
+    if(!value)continue;
+    insist(value.length<=240 && (!['voice','discount'].includes(key)||['yes','no','unknown'].includes(value)),
+      '请选择有效的业务筛选条件。',400);
+    filters[key]=value;
+  }
+  return filters;
+}
+
+function recordBusiness(record) {
+  const tariff=record.tariff||{}, id=tariff.reviewed_id||'';
+  const guarantee=id==='business-guarantee';
+  const name=/^business-200m-/.test(id)?'200M 智云上海专线升级版':
+    /^business-100m-/.test(id)||tariff.carrier_profile?'100M 智云上海专线基础版':
+    id.startsWith('business-ai-')?'智云护航 AI 套餐升级':guarantee?'外地公司担保书':tariff.name;
+  const voice=guarantee||id==='business-ai-v1'||typeof tariff.voice_required!=='boolean'?'unknown':tariff.voice_required?'yes':'no';
+  const discount=record.discount?.mode || (guarantee?'unknown':
+    id.includes('-discount-')||tariff.carrier_profile?.endsWith('-discount')||tariff.discount_rate?'yes':
+    /^business-(100m|200m)-/.test(id)||tariff.carrier_profile||tariffs.some(t=>t.id===tariff.id)?'no':'unknown');
+  return {business_id:record.business_id,business_name:name,business_attribute:record.business_attribute,voice,discount};
+}
+
+export function workDashboard(actor, roster, records, range=dashboardPeriod(), filters={}) {
+  const admin=actor.role==='admin';
+  const visible=admin?records:records.filter(record=>record.created_by===actor.id);
+  const classified=visible.map(record=>({record,business:recordBusiness(record)}));
+  const names=[...new Map(classified.filter(({business:b})=>b.business_id&&b.business_name)
+    .map(({business:b})=>[JSON.stringify([b.business_id,b.business_name]),{business_id:b.business_id,name:b.business_name}])).values()];
+  records=classified.filter(({business})=>Object.entries(filters).every(([key,value])=>business[key]===value)).map(({record})=>record);
   if(range.from){
     const start=Date.parse(range.from+'T00:00:00+08:00');
     const end=Date.parse(range.to+'T00:00:00+08:00')+dashboardDay;
@@ -151,8 +192,7 @@ export function workDashboard(actor, roster, records, range=dashboardPeriod()) {
       return time>=start && time<end;
     });
   }
-  const admin=actor.role==='admin';
   const counts=new Map((admin?roster:[actor]).map(person=>[person.id,0]));
   for(const record of records) counts.set(record.created_by,(counts.get(record.created_by)||0)+1);
-  return {scope:admin?'team':'self', range, employees:[...counts].map(([id,forms_count])=>({id,forms_count,quote_count:null})), records};
+  return {scope:admin?'team':'self', range, filters, business_names:names, employees:[...counts].map(([id,forms_count])=>({id,forms_count,quote_count:null})), records};
 }
