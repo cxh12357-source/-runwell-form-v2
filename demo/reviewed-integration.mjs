@@ -1,5 +1,7 @@
 import { reviewedCatalog, renderReviewed, reviewedLimit, identifyReviewed } from './reviewed/render.mjs';
 import { guaranteeFields } from './supplement.mjs';
+import { packageFields, packageOptions } from './reviewed/package-options.mjs';
+import { aiOptionsMetadata } from './reviewed/ai-options.mjs';
 
 const business_id='business-line';
 const revisions={
@@ -30,15 +32,18 @@ export function reviewedControls(id) {
   if(id==='business-guarantee') return {blank:true,groups:[],inputs:[['guarantee_email','* E-MAIL',true,'email'],...guaranteeFields.map(([key,label,,required=true,type])=>[
     key==='company_name'?'guarantee_company':key==='extra_credit_code'?'guarantee_credit':key,key==='guarantor_id'?'* '+label:label,required,type
   ])]};
-  return {groups:[
+  const package_options=packageOptions(id);
+  const lineVoice=Boolean(package_options && /^business-(?:100m|200m)(?:-discount)?-voice$/.test(id));
+  return {...(package_options?{package_options}:{}),ai_options:aiOptionsMetadata(id),groups:[
     {key:'choice_billing',label:'账单地址方式',required:true,options:['同公司地址','其他地址（下载后手工填入）']},
-    ...(['business-ai-v1','business-ai-v2-voice'].includes(id)?[{key:'service_type_choice',label:'授权书实际办理业务',required:true,options:['宽带','宽带、固话','宽带、手机','宽带、固话、手机']}]:[])
+    ...(['business-ai-v1','business-ai-v2-voice'].includes(id) || lineVoice ? [{key:'service_type_choice',label:'授权书实际办理业务',required:true,
+      default:'0',options:['宽带','宽带、固话','宽带、手机','宽带、固话、手机'],...(lineVoice?{auto_from_package:true}:{})}] : [])
   ],inputs:[
     ['extra_credit_code','统一社会信用代码',true],['extra_industry','企业所属行业',true],
     ['extra_company_size','企业规模',true],['extra_computer_count','计算机数量',true],
-    ['install_zip','安装邮编',true],['billing_zip','账单邮编',true],['job_title','经办人职务'],['fax','传真'],
+    ['install_zip','安装邮编',false],['billing_zip','账单邮编',true],['job_title','经办人职务'],['fax','传真'],
     ['security_name','信息安全责任人姓名',true],['security_role','信息安全责任人职务',true],['security_phone','信息安全责任人联系方式',true],
-    ['service_use','业务用途',true],['application_date','申请日期',true,'date']
+    ['service_use','业务用途',true],['application_date','申请日期',false,'date']
   ]};
 }
 
@@ -46,17 +51,32 @@ const clean=value=>typeof value==='string'?value.trim():'';
 export async function generateReviewed(tariff,bytes,customer) {
   const id=tariff.reviewed_id, controls=reviewedControls(id);
   const values=Object.fromEntries(controls.inputs.map(([key])=>[key,clean(customer[key])]));
+  // Reject incompatible AI choices before normalizing fields. Silently
+  // converting a non-string checkbox value to '' would discard an order.
+  const allowedAiFields=new Set(controls.ai_options?.fields ?? []);
+  for(const [key,value] of Object.entries(customer)) {
+    if(!key.startsWith('ai_') || value===undefined)continue;
+    if(typeof value!=='string')throw new Error('AI 套餐选项格式无效。');
+    if(!allowedAiFields.has(key) && value.trim())throw new Error('当前文档的 AI 套餐选项尚未核验，请人工核对。');
+  }
+  if(!controls.package_options && packageFields.some(key=>customer[key]!==undefined && customer[key]!==''))
+    throw new Error('当前文档的套餐选项尚未核验，请人工核对。');
+  if(controls.package_options) for(const key of controls.package_options.fields) {
+    if(customer[key]!==undefined && typeof customer[key]!=='string')throw new Error('套餐选项格式无效。');
+    values[key]=clean(customer[key]);
+  }
   if(controls.blank){
     const {guarantee_company,guarantee_credit,guarantee_date,guarantee_email,...fields}=values;
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guarantee_email))throw new Error('请填写有效的 E-MAIL。');
     return renderReviewed(id,bytes,{...fields,company_name:guarantee_company,extra_credit_code:guarantee_credit,application_date:guarantee_date});
   }
   for(const key of ['company_name','install_address','contact_name','phone','id_number','email','payment_method']) values[key]=clean(customer[key]);
+  for(const key of controls.ai_options?.fields ?? []) values[key]=clean(customer[key]);
   if(!['0','1'].includes(customer.choice_billing))throw new Error('请选择账单地址方式。');
-  values.billing_mode=customer.choice_billing==='0'?'same_company':'other_manual';
-  if(values.billing_mode==='other_manual'){
-    if(!clean(customer.billing_address)||customer.manual_billing_ack!=='on')throw new Error('请填写其他账单地址，并确认下载后手工填入 Word。');
-    values.manual_billing_ack=true;
+  values.billing_mode=customer.choice_billing==='0'?'same_company':'other_address';
+  if(values.billing_mode==='other_address'){
+    values.billing_address=clean(customer.billing_address);
+    if(!values.billing_address)throw new Error('请填写账单地址。');
   }
   if(values.payment_method==='collection'){
     if(!clean(customer.bank_name))throw new Error('请填写开户银行。');

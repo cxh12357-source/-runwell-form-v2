@@ -152,16 +152,6 @@ export function matchReplyTariff(text, choices) {
   if (names.length>1 || (!names.length && !(speed && price && /月/.test(raw)))) return '';
   return matched.length===1?matched[0].id:'';
 }
-export function staffEstimates(input) {
-  const s=String(input??'').trim();
-  if(!/^\d{1,7}$/.test(s)) return null;
-  const n=Number(s), computers=n*2;
-  return {
-    people:n, computers,
-    extra_company_size:n<10?'10人以下':n<=30?'10-30人':n<=80?'31-80人':n<=200?'81-200人':'200人以上',
-    extra_computer_count:computers<=5?'5台及以下':computers<=15?'6-15台':computers<=40?'16-40台':computers<=100?'41-100台':'100台以上'
-  };
-}
 export function lookupFixture(name) {
   if (!['虚构测试企业','润网流程验收测试有限公司'].includes(name.trim())) return null;
   return {extra_credit_code:'TEST00000000000001',extra_industry:'软件和信息技术服务业',insured:'8'};

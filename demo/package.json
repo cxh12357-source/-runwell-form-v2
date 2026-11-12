@@ -9,6 +9,7 @@
     "sql.js": "1.15.2"
   },
   "devDependencies": {
-    "fake-indexeddb": "6.2.5"
+    "fake-indexeddb": "6.2.5",
+    "jsdom": "^31.0.0"
   }
 }
