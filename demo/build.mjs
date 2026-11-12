@@ -97,7 +97,7 @@ async function publishFiles() {
   const files = {
     'index.html': html, 'styles.css': await read('frontend/styles.css'), 'app.js': app,
     'runwell-logo.svg': await read('frontend/runwell-logo.svg'),
-    'licenses.txt': licenses.join('\n\n'), 'version.json': JSON.stringify({ commit, branch: 'feature/project-skeleton', mode: 'browser-demo' }),
+    'licenses.txt': licenses.join('\n\n'), 'version.json': JSON.stringify({ commit, branch: 'main', mode: 'browser-demo' }),
     'robots.txt': 'User-agent: *\nDisallow: /\n', 'ship.json': JSON.stringify({ headers: [{ source: '/(.*)', headers: [
       { key: 'Cache-Control', value: 'no-cache' }, { key: 'Content-Security-Policy', value: policy },
       { key: 'Referrer-Policy', value: 'no-referrer' }, { key: 'X-Content-Type-Options', value: 'nosniff' }

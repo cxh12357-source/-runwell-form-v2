@@ -96,7 +96,7 @@ export function bindForms() {
 add('app.js', replaceRequired(await read('app.js'), "from './modules/forms.js'", "from './modules/demo-forms.js'")
   .replace("import { currentIdentity } from './modules/forms/shared.js';", "const currentIdentity = () => null;")
   .replace("view.innerHTML = html;", `view.innerHTML = html + '<p class="demo-version">界面来源：GitHub 已合并版本 ${commit.slice(0, 7)} · 表单填写由 oneaskq 负责</p>';`));
-add('version.json', JSON.stringify({ commit, branch: 'feature/project-skeleton', mode: 'static-demo' }));
+add('version.json', JSON.stringify({ commit, branch: 'main', mode: 'static-demo' }));
 add('ship.json', JSON.stringify({ headers: [{ source: '/(.*)', headers: [{ key: 'Cache-Control', value: 'no-cache' }] }] }));
 const names = new Set(files.map(f => f.path));
 // The host uploads the whole output folder. Refuse stale or unexpected files.

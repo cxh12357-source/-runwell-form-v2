@@ -35,7 +35,7 @@ test('公网展示包仅含白名单界面和测试元数据，不带后台、�
   const texts = await Promise.all((await entries(output)).map(name => readFile(join(output, name), 'utf8')));
   for (const text of texts) assert.doesNotMatch(text, /fetch\s*\(|XMLHttpRequest|Authorization|localStorage|sessionStorage|(?:ship|deploy)-[a-f0-9]{32}/i);
   assert.deepEqual(JSON.parse(await readFile(join(output, 'version.json'), 'utf8')), {
-    commit, branch: 'feature/project-skeleton', mode: 'static-demo'
+    commit, branch: 'main', mode: 'static-demo'
   });
   const { renderForms } = await import(pathToFileURL(join(output, 'modules/demo-forms.js')));
   const generation = renderForms('/forms/generate');
